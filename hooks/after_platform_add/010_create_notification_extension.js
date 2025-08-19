@@ -38,7 +38,7 @@ module.exports = function(context) {
       }
       // Copy in the extension files
       console.log('Copying in the extension files to the iOS project');
-      fs.mkdirSync(`${iosPath}${extName}`);
+      try { fs.mkdirSync(`${iosPath}${extName}`, {recursive: true}); } catch (e) {}
       extFiles.forEach(function (extFile) {
         let targetFile = `${iosPath}${extName}/${extFile}`;
         fs.createReadStream(`${sourceDir}${extFile}`)
@@ -59,6 +59,45 @@ module.exports = function(context) {
       // Add a target for the extension
       console.log('Adding the new target');
       let target = proj.addTarget(extName, 'app_extension');
+
+      // Get app bundle id from <widget id="..."> in config.xml
+      const bundleId = appConfig.packageName();
+      const desiredExtBundleId = `${bundleId}.${extName}`;
+      const marketing = appConfig.version();
+
+      // Point the target at the copied plist and set the bundle id
+      const cfgs = proj.pbxXCBuildConfigurationSection();
+      Object.keys(cfgs).forEach(ref => {
+        const cfg = cfgs[ref];
+        if (!cfg || !cfg.buildSettings) return;
+
+        // Only touch the new extension target’s configs
+        if (cfg.buildSettings.PRODUCT_NAME === `"${extName}"`) {
+          cfg.buildSettings.PRODUCT_BUNDLE_IDENTIFIER = desiredExtBundleId;
+          cfg.buildSettings.INFOPLIST_FILE = `"${extName}/${extName}-Info.plist"`;
+
+          // sensible defaults for extensions
+          cfg.buildSettings.SDKROOT = 'iphoneos';
+          cfg.buildSettings.SKIP_INSTALL = 'YES';
+          cfg.buildSettings.LD_RUNPATH_SEARCH_PATHS = `"$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"`;
+          cfg.buildSettings.MARKETING_VERSION = marketing;           // CFBundleShortVersionString
+          cfg.buildSettings.CURRENT_PROJECT_VERSION = marketing;     // CFBundleVersion
+        }
+      });
+
+      // Ensure the plist inherits from the build setting (in case source file didn’t)
+      const plistPath = `${iosPath}${extName}/${extName}-Info.plist`;
+      try {
+        let plist = fs.readFileSync(plistPath, 'utf8');
+        plist = plist.replace(
+          /<key>CFBundleIdentifier<\/key>\s*<string>.*?<\/string>/,
+          '<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>'
+        );
+        fs.writeFileSync(plistPath, plist);
+      } catch (e) {
+        console.log('Note: could not normalize CFBundleIdentifier in plist (will still use build setting).');
+      }
+
       // Add build phases to the new target
       console.log('Adding build phases to the new target');
       proj.addBuildPhase([ 'NotificationService.m' ], 'PBXSourcesBuildPhase', 'Sources', target.uuid);
