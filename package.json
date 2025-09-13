@@ -23,7 +23,6 @@
       "cordova-plugin-multi-window": {},
       "cordova-plugin-ignore-lint-translation": {},
       "cordova-plugin-advanced-websocket": {},
-      "cordova-plugin-ionic-keyboard": {},
       "cordova-plugin-add-swift-support": {},
       "cordova-plugin-file-transfer": {},
       "cordova-plugin-advanced-http": {
@@ -55,6 +54,12 @@
     }
   },
   "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/app": "^7.1.0",
+    "@capacitor/haptics": "^7.0.2",
+    "@capacitor/ios": "^7.4.3",
+    "@capacitor/keyboard": "^7.0.3",
+    "@capacitor/status-bar": "^7.0.3",
     "async": "^3.2.6",
     "deep-equal": "^2.2.3",
     "define-properties": "^1.2.1",
@@ -75,6 +80,7 @@
     "regexp.prototype.flags": "^1.5.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.4.3",
     "@electron/notarize": "^2.5.0",
     "@ionic/v1-toolkit": "^3.2.20",
     "bower": "^1.8.14",
@@ -102,7 +108,6 @@
     "cordova-plugin-ignore-lint-translation": "^0.0.1",
     "cordova-plugin-inappbrowser": "^6.0.0",
     "cordova-plugin-insomnia": "^4.3.0",
-    "cordova-plugin-ionic-keyboard": "^2.2.0",
     "cordova-plugin-media": "^7.0.0",
     "cordova-plugin-multi-window": "^0.0.3",
     "cordova-plugin-network-information": "^3.0.0",
