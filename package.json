@@ -1,7 +1,7 @@
 {
   "name": "zmninja",
   "description": "Home security mobile app for ZoneMinder",
-  "version": "1.7.013",
+  "version": "1.8.000",
   "displayName": "zmNinja",
   "author": "Zoneminder Inc, Pliable Pixels",
   "repository": {
@@ -11,8 +11,8 @@
   "license": "SEE LICENSE IN LICENSE.md",
   "cordova": {
     "platforms": [
-      "android",
-      "ios"
+      "ios",
+      "android"
     ],
     "plugins": {
       "cordova-plugin-globalization": {},
@@ -47,11 +47,42 @@
       "cordova-plugin-statusbar": {},
       "cordova-plugin-cloud-settings": {},
       "cordova-plugin-file": {},
-      "cordova-plugin-x-socialsharing": {},
-      "cordova-plugin-certificates-pp-fork": {},
-      "cordova-plugin-ionic-webview": {},
       "cordova-plugin-photo-library-zm": {
         "PHOTO_LIBRARY_USAGE_DESCRIPTION": " "
+      },
+      "cordova-plugin-x-socialsharing": {},
+      "cordova-plugin-certificates-pp-fork": {},
+      "cordova-plugin-firebasex": {
+        "FIREBASE_ANALYTICS_COLLECTION_ENABLED": "true",
+        "FIREBASE_PERFORMANCE_COLLECTION_ENABLED": "true",
+        "FIREBASE_CRASHLYTICS_COLLECTION_ENABLED": "true",
+        "FIREBASE_FCM_AUTOINIT_ENABLED": "true",
+        "FIREBASE_ANALYTICS_WITHOUT_ADS": "false",
+        "FIREBASE_MESSAGING_IMMEDIATE_PAYLOAD_DELIVERY": "false",
+        "GOOGLE_ANALYTICS_ADID_COLLECTION_ENABLED": "true",
+        "GOOGLE_ANALYTICS_DEFAULT_ALLOW_ANALYTICS_STORAGE": "true",
+        "GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_STORAGE": "true",
+        "GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_USER_DATA": "true",
+        "GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_PERSONALIZATION_SIGNALS": "true",
+        "ANDROID_ICON_ACCENT": "#FF00FFFF",
+        "ANDROID_FIREBASE_PERFORMANCE_MONITORING": "false",
+        "ANDROID_PLAY_SERVICES_TAGMANAGER_VERSION": "18.1.1",
+        "ANDROID_PLAY_SERVICES_AUTH_VERSION": "21.3.0",
+        "ANDROID_FIREBASE_ANALYTICS_VERSION": "22.2.0",
+        "ANDROID_FIREBASE_MESSAGING_VERSION": "24.1.0",
+        "ANDROID_FIREBASE_CONFIG_VERSION": "22.1.0",
+        "ANDROID_FIREBASE_PERF_VERSION": "21.0.4",
+        "ANDROID_FIREBASE_AUTH_VERSION": "23.2.0",
+        "ANDROID_FIREBASE_INAPPMESSAGING_VERSION": "21.0.1",
+        "ANDROID_FIREBASE_FIRESTORE_VERSION": "25.1.2",
+        "ANDROID_FIREBASE_FUNCTIONS_VERSION": "21.1.0",
+        "ANDROID_FIREBASE_IID_VERSION": "21.1.0",
+        "ANDROID_FIREBASE_INSTALLATIONS_VERSION": "18.0.0",
+        "ANDROID_FIREBASE_CRASHLYTICS_VERSION": "19.4.0",
+        "ANDROID_FIREBASE_CRASHLYTICS_NDK_VERSION": "19.4.0",
+        "ANDROID_GSON_VERSION": "2.11.0",
+        "ANDROID_FIREBASE_PERF_GRADLE_PLUGIN_VERSION": "1.4.2",
+        "ANDROID_GRPC_OKHTTP": "1.68.0"
       }
     }
   },
@@ -98,6 +129,7 @@
     "cordova-plugin-device": "^3.0.0",
     "cordova-plugin-file": "^8.1.3",
     "cordova-plugin-file-transfer": "github:apache/cordova-plugin-file-transfer",
+    "cordova-plugin-firebase": "^2.0.6",
     "cordova-plugin-firebasex": "^18.0.5",
     "cordova-plugin-globalization": "^1.11.0",
     "cordova-plugin-ignore-lint-translation": "^0.0.1",
@@ -115,7 +147,7 @@
     "cordova-plugin-x-socialsharing": "github:SteveGilvarry/Cordova-plugin-socialsharing-zm",
     "cordova-sqlite-storage": "^6.1.0",
     "dotenv": "^16.4.7",
-    "electron": "^33.2.1",
+    "electron": "^35.7.5",
     "electron-builder": "^25.1.8",
     "electron-osx-sign": "^0.6.0",
     "gulp": "^5.0.0",
@@ -123,7 +155,6 @@
     "gulp-concat": "^2.6.1",
     "gulp-rename": "^2.0.0",
     "gulp-sass": "^6.0.1",
-    "help": "^3.0.2",
     "jshint": "^2.13.6",
     "json-file": "^0.1.0",
     "keypress": "^0.2.1",
