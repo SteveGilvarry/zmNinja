@@ -4,7 +4,7 @@
 /* jslint browser: true*/
 /* global saveAs, cordova,StatusBar,angular,console,ionic, moment, Chart */
 
-angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$rootScope', 'zm', 'NVR', '$ionicSideMenuDelegate', '$timeout', '$interval', '$ionicModal', '$ionicLoading', '$http', '$state', '$stateParams', '$ionicHistory', '$ionicScrollDelegate', '$q', '$sce', 'carouselUtils', '$ionicPopup', '$translate', '$filter', 'SecuredPopups', '$cordovaFile', function ($scope, $rootScope, zm, NVR, $ionicSideMenuDelegate, $timeout, $interval, $ionicModal, $ionicLoading, $http, $state, $stateParams, $ionicHistory, $ionicScrollDelegate, $q, $sce, carouselUtils, $ionicPopup, $translate, $filter, SecuredPopups, $cordovaFile) {
+angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$rootScope', 'zm', 'NVR', '$ionicSideMenuDelegate', '$timeout', '$interval', '$ionicModal', '$ionicLoading', '$http', '$state', '$stateParams', '$ionicHistory', '$ionicScrollDelegate', '$q', '$sce', 'carouselUtils', '$ionicPopup', '$translate', '$filter', 'SecuredPopups', 'MediaHelper', function ($scope, $rootScope, zm, NVR, $ionicSideMenuDelegate, $timeout, $interval, $ionicModal, $ionicLoading, $http, $state, $stateParams, $ionicHistory, $ionicScrollDelegate, $q, $sce, carouselUtils, $ionicPopup, $translate, $filter, SecuredPopups, MediaHelper) {
 
   var videoPlaybarClicked = false;
 
@@ -526,7 +526,13 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
       noBackdrop: true,
       duration: 3000
     });
-    //NVR.log("Error saving image: " + e.message);
+    if (e) {
+      try {
+        NVR.debug("Error saving media: " + JSON.stringify(e));
+      } catch (ex) {
+        NVR.debug("Error saving media: " + e);
+      }
+    }
     //console.log("***ERROR");
   }
 
@@ -542,24 +548,14 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
       return;
     }
 
-    NVR.debug("EventModalCtrl: Permission checking for write");
-    var permissions = cordova.plugins.permissions;
-    permissions.checkPermission(permissions.WRITE_EXTERNAL_STORAGE, checkPermissionCallback, null);
-
-    function checkPermissionCallback(status) {
-      if (!status.checkPermission) {
-        SaveError("No permission to write to external storage");
-      }
-      permissions.requestPermission(permissions.WRITE_EXTERNAL_STORAGE, succ, err);
-    }
-
-    function succ(s) {
-      saveEvent("video", eid);
-    }
-
-    function err(e) {
-      SaveError("Error in requestPermission");
-    }
+    MediaHelper.requestPermissions()
+      .then(function () {
+        saveEvent("video", eid);
+      })
+      .catch(function (err) {
+        NVR.debug("Permission request failed: " + JSON.stringify(err));
+        SaveError(err);
+      });
 
   };
 
@@ -589,23 +585,14 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
 
     // if we are on android do the 6.x+ hasPermissions flow
     NVR.debug("EventModalCtrl: Permission checking for write");
-    var permissions = cordova.plugins.permissions;
-    permissions.checkPermission(permissions.WRITE_EXTERNAL_STORAGE, checkPermissionCallback, null);
-
-    function checkPermissionCallback(status) {
-      if (!status.checkPermission) {
-        SaveError("No permission to write to external storage");
-      }
-      permissions.requestPermission(permissions.WRITE_EXTERNAL_STORAGE, succ, err);
-    }
-
-    function succ(s) {
-      saveEventImage(onlyAlarms, eid);
-    }
-
-    function err(e) {
-      SaveError("Error in requestPermission");
-    }
+    MediaHelper.requestPermissions()
+      .then(function () {
+        saveEventImage(onlyAlarms, eid);
+      })
+      .catch(function (err) {
+        NVR.debug("Permission request failed: " + JSON.stringify(err));
+        SaveError(err);
+      });
   };
 
   function saveEventImage(onlyAlarms, eid) {
@@ -651,11 +638,12 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
 
               event = success.data.event;
 
-              event.Event.BasePath = computeBasePath(event);
-              event.Event.relativePath = computeRelativePath(event);
+              var eventDetails = event.Event;
+              eventDetails.BasePath = computeBasePath(eventDetails);
+              eventDetails.relativePath = computeRelativePath(eventDetails);
               $scope.playbackURL = $scope.loginData.url;
-              $scope.eventBasePath = event.Event.BasePath;
-              $scope.relativePath = event.Event.relativePath;
+              $scope.eventBasePath = eventDetails.BasePath;
+              $scope.relativePath = eventDetails.relativePath;
 
               // now lets get approx frame #
 
@@ -664,10 +652,10 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
               if (handle) {
                 totalTime = handle.totalTime/1000;
               } else {
-                totalTime = event.Event.length;
+                totalTime = eventDetails.length;
               }
 
-              var totalFrames = event.Event.Frames;
+              var totalFrames = eventDetails.Frames;
 
 
               var myFrame = Math.round(totalFrames / totalTime * $scope.currentProgress.progress);
@@ -915,9 +903,6 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
 
     NVR.debug ("saveEvent  in EventModalCtrl called with "+t+" and "+ eid);
     var fname;
-    var fn = "cordova.plugins.photoLibrary.saveImage";
-    var loginData = NVR.getLogin();
-
     $ionicLoading.show({
       template: $translate.instant('kPleaseWait') + "...",
       noBackdrop: true,
@@ -927,76 +912,65 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
     if ($scope.defaultVideo !== undefined && $scope.defaultVideo != '' && t != "image") {
       $scope.selectEventUrl = $scope.video_url;
       fname = "zmNinja-eid-"+eid+".mp4";
-      fn = "cordova.plugins.photoLibrary.saveVideo";
     } else {
       fname = "zmNinja-eid-"+eid+".jpg";
     }
 
     NVR.debug("-->Going to try and download " + $scope.selectEventUrl);
     var url = $scope.selectEventUrl;
+    var album = 'zmNinja';
+    var isVideo = fname.indexOf('.mp4') !== -1;
 
     if ($rootScope.platformOS != 'desktop') {
-      var album = 'zmNinja';
-      NVR.debug("Trying to save image to album: " + album);
-      cordova.plugins.photoLibrary.requestAuthorization(
-        function () {
-          var fileTransfer = new FileTransfer();
-          var urle = encodeURI(url);
+      NVR.debug("Trying to save media to album: " + album);
+      var fetchOptions = {};
+      if ($rootScope.basicAuthHeader) {
+        fetchOptions.headers = {
+          'Authorization': $rootScope.basicAuthHeader
+        };
+      }
 
-          fileTransfer.onprogress = function (progressEvent) {
-            if (progressEvent.lengthComputable) {
-
-              $timeout(function () {
-                var perc = Math.floor(progressEvent.loaded / progressEvent.total * 100);
-                $ionicLoading.show({
-                  template: $translate.instant('kPleaseWait') + "... (" + perc + "%)",
-                  noBackdrop: true,
-                  //duration: zm.httpTimeout
-                });
+      var savePromise;
+      if (isVideo) {
+        savePromise = MediaHelper.saveVideoFromUrl(url, {
+          fileName: fname,
+          album: album,
+          headers: fetchOptions.headers,
+          onProgress: function (perc) {
+            $timeout(function () {
+              $ionicLoading.show({
+                template: $translate.instant('kPleaseWait') + "... (" + perc + "%)",
+                noBackdrop: true
               });
-            }
-          };
+            });
+          }
+        });
+      } else {
+        savePromise = MediaHelper.savePhotoFromUrl(url, {
+          fileName: fname,
+          album: album,
+          headers: fetchOptions.headers,
+          onProgress: function (perc) {
+            $timeout(function () {
+              $ionicLoading.show({
+                template: $translate.instant('kPleaseWait') + "... (" + perc + "%)",
+                noBackdrop: true
+              });
+            });
+          }
+        });
+      }
 
-          fileTransfer.download(urle, cordova.file.dataDirectory + fname,
-            function (entry) {
-              NVR.debug("local download complete: " + entry.toURL() + '. Now trying to move it to album');
-              var pluginName = ((fname.indexOf('.mp4') != -1) ? "saveVideo" : "saveImage");
-
-              cordova.plugins.photoLibrary[pluginName](entry.toURL(), album,
-                function (cameraRollAssetId) {
-                  SaveSuccess();
-                  $cordovaFile.removeFile(cordova.file.dataDirectory, fname)
-                    .then(
-                      function () {
-                        NVR.debug("file removed from data directory");
-                      },
-                      function (e) {
-                        NVR.debug("could not delete temp file: " + JSON.stringify(e));
-                      }
-                    );
-                },
-                function (err) {
-                  NVR.debug("Saving error:" + JSON.stringify(err));
-                  SaveError();
-                });
-            },
-            function (err) {
-              NVR.log("error downloading:" + JSON.stringify(err));
-              SaveError();
-            }, !loginData.enableStrictSSL, {});
-          // User gave us permission to his library, retry reading it!
-        },
-        function (err) {
-          // User denied the access
-          NVR.debug("Permission not granted");
-          SaveError();
-        }, // if options not provided, defaults to {read: true}.
-
-        {
-          read: true,
-          write: true
-        }
-      );
+      savePromise
+        .then(function () {
+          SaveSuccess();
+          $ionicLoading.hide();
+        })
+        .catch(function (err) {
+          NVR.log("Saving error:" + JSON.stringify(err));
+          $ionicLoading.hide();
+          SaveError(err);
+        });
 
     } else {
       //desktop
@@ -1947,15 +1921,14 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
 
   function computeRelativePath(event) {
     var relativePath = "";
-    var loginData = NVR.getLogin();
-    var str = event.Event.StartTime;
+    var str = event.StartTime;
     var yy = moment(str).locale('en').format('YY');
     var mm = moment(str).locale('en').format('MM');
     var dd = moment(str).locale('en').format('DD');
     var hh = moment(str).locale('en').format('HH');
     var min = moment(str).locale('en').format('mm');
     var sec = moment(str).locale('en').format('ss');
-    relativePath = event.Event.MonitorId + "/" +
+    relativePath = event.MonitorId + "/" +
       yy + "/" +
       mm + "/" +
       dd + "/" +
@@ -1973,7 +1946,7 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
   function computeBasePath(event) {
     var basePath = "";
     var loginData = NVR.getLogin();
-    var str = event.Event.StartTime;
+    var str = event.StartTime;
     var yy = moment(str).locale('en').format('YY');
     var mm = moment(str).locale('en').format('MM');
     var dd = moment(str).locale('en').format('DD');
@@ -1982,7 +1955,7 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
     var sec = moment(str).locale('en').format('ss');
 
     basePath = loginData.url + "/events/" +
-      event.Event.MonitorId + "/" +
+      event.MonitorId + "/" +
       yy + "/" +
       mm + "/" +
       dd + "/" +
@@ -2134,7 +2107,8 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
 
     $http.get(myurl).then(function (success) {
         currentEvent = $scope.event = $scope.currentEvent = success.data.event;
-	var event = currentEvent.Event;
+        NVR.debug('Fetched event details for modal: ' + (currentEvent && currentEvent.Event ? currentEvent.Event.Id : 'unknown'));
+        var event = currentEvent.Event;
 
         // console.log ("prepareModal DATA:"+JSON.stringify(success.data));
         computeAlarmFrames(success.data);
@@ -2147,7 +2121,7 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
           NVR.log("Event not ready, setting live view, with MID=" + $scope.liveFeedMid);
         }
 
-        event.BasePath = computeBasePath(currentEvent);
+        event.BasePath = computeBasePath(event);
         event.relativePath = computeRelativePath(event);
         event.streamingURL = NVR.getStreamingURL(event.MonitorId);
         event.recordingURL = NVR.getRecordingURL(event.MonitorId);
@@ -2198,7 +2172,7 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
         $scope.nextId = "...";
         $scope.prevId = "...";
 
-        event.Event.video = {};
+        event.video = {};
         var videoURL = event.recordingURL + "/index.php?view=view_video&mode=mpeg&format=h264&eid=" + event.Id;
 
         if ($rootScope.authSession != 'undefined') videoURL += $rootScope.authSession;
@@ -2236,7 +2210,7 @@ angular.module('zmApp.controllers').controller('EventModalCtrl', ['$scope', '$ro
           }
         };
 
-        // $scope.videoObject = angular.copy(event.Event.video);
+        // $scope.videoObject = angular.copy(event.video);
 
         $scope.playbackURL = $scope.loginData.url;
 

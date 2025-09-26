@@ -1,7 +1,7 @@
 /* jshint -W041 */
 
 /* jslint browser: true*/
-/* global cordova,StatusBar,angular,console ,PushNotification, FirebasePlugin*/
+/* global cordova,angular,console,CordovaWebsocketPlugin */
 
 //--------------------------------------------------------------------------
 // This factory interacts with the ZM Event Server
@@ -299,7 +299,7 @@ angular.module('zmApp.controllers')
       ws.onopen = function (event) {
         handleOpen(event.data);
         if (!pushInited) {
-          NVR.debug("Initializing FCM push");
+          NVR.debug("Initializing push notifications");
           pushInit();
         }
         d.resolve("true");
@@ -475,306 +475,279 @@ angular.module('zmApp.controllers')
 
     function pushInit() {
       NVR.log("EventServer: Setting up push registration");
-      var push;
+
       var mediasrc;
       var media;
       var ld = NVR.getLogin();
-
-      //var plat = $ionicPlatform.is('ios') ? 'ios' : 'android';
       var plat = $rootScope.platformOS;
+      var pushPlugin = (window.Capacitor && ((window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications) || window.Capacitor.PushNotifications)) ||
+        (typeof window.CapacitorPushNotifications !== 'undefined' ? window.CapacitorPushNotifications : null);
 
-      if ($rootScope.platformOS == 'desktop') {
-       NVR.log ('push: Not setting up push as this is desktop.');
+      if (plat == 'desktop') {
+        NVR.log('push: Not setting up push as this is desktop.');
         return;
       }
-     
-      // get permission if we need it
-      window.FirebasePlugin.hasPermission(function(hasPermission){
-        if (!hasPermission) {
-          window.FirebasePlugin.grantPermission(function(hasPermission){
-            if (hasPermission) {
-              NVR.debug ('push: permission granted, waiting for token');
-            } else {
-              NVR.log('ERROR: push: Permission not granted for push');
-            }
-          });
-        } else {
-          NVR.debug('push: permissions are already enabled');
+
+      if (!pushPlugin) {
+        NVR.log('push: Capacitor PushNotifications plugin not available');
+        return;
+      }
+
+      if (pushInited) {
+        NVR.debug('push: already initialized');
+        return;
+      }
+      pushInited = true;
+
+      mediasrc = plat == 'ios' ? 'sounds/blop.mp3' : '/android_asset/www/sounds/blop.mp3';
+
+      try {
+        media = $cordovaMedia.newMedia(mediasrc);
+      }
+      catch (err) {
+        NVR.debug('Media init error:' + JSON.stringify(err));
+      }
+
+      function registerTokenWithEventServer(tokenValue) {
+        var loginData = NVR.getLogin();
+
+        if (!loginData.isUseEventServer) {
+          NVR.debug('push: Event server disabled, skipping token registration');
+          return;
         }
-      });
 
-      if ($rootScope.platformOS == 'android') {
-        // Define custom  channel - all keys are except 'id' are optional.
-        var channel  = {
-          // channel ID - must be unique per app package
-          id: "zmninja",
-          // Channel description. Default: empty string
-          description: "zmNinja push",
-          // Channel name. Default: empty string
-          name: "zmNinja",
-          //The sound to play once a push comes. Default value: 'default'
-          //Values allowed:
-          //'default' - plays the default notification sound
-          //'ringtone' - plays the currently set ringtone
-          //'false' - silent; don't play any sound
-          //filename - the filename of the sound file located in '/res/raw' without file extension (mysound.mp3 -> mysound)
-          sound: "default",
+        var pushstate = loginData.disablePush == true ? 'disabled' : 'enabled';
+        var monstring = '';
+        var intstring = '';
 
-          //Vibrate on new notification. Default value: true
-          //Possible values:
-          //Boolean - vibrate or not
-          //Array - vibration pattern - e.g. [500, 200, 500] - milliseconds vibrate, milliseconds pause, vibrate, pause, etc.
+        NVR.getMonitors()
+          .then(function (monitors) {
+            if (loginData.eventServerMonitors != '') {
+              monstring = loginData.eventServerMonitors;
+              intstring = loginData.eventServerInterval;
+              NVR.debug('EventServer: loading saved monitor list and interval of ' + monstring + '>>' + intstring);
+            } else {
+              for (var i = 0; i < monitors.length; i++) {
+                monstring = monstring + monitors[i].Monitor.Id + ',';
+                intstring = intstring + '0,';
+              }
+              if (monstring.charAt(monstring.length - 1) == ',') {
+                monstring = monstring.substr(0, monstring.length - 1);
+              }
+              if (intstring.charAt(intstring.length - 1) == ',') {
+                intstring = intstring.substr(0, intstring.length - 1);
+              }
+            }
+
+            $rootScope.monstring = monstring;
+            $rootScope.intstring = intstring;
+
+            sendMessage('push', {
+              type: 'token',
+              platform: plat,
+              token: tokenValue,
+              monlist: monstring,
+              intlist: intstring,
+              state: pushstate
+            }, 1);
+          },
+          function () {
+            NVR.log("EventServer: Could not get monitors, can't send push reg");
+          });
+      }
+
+      function normalizeNotificationData(notification, tapState) {
+        var payload = {};
+
+        if (notification && typeof notification === 'object') {
+          if (notification.data !== undefined && notification.data !== null) {
+            if (typeof notification.data === 'string') {
+              try {
+                payload = JSON.parse(notification.data);
+              } catch (err) {
+                NVR.debug('push: Unable to parse notification data string');
+                payload = { raw: notification.data };
+              }
+            } else if (typeof notification.data === 'object') {
+              payload = notification.data;
+            }
+          }
+
+          if (!payload.eid && notification.eid) {
+            payload.eid = notification.eid;
+          }
+          if (!payload.mid && notification.mid) {
+            payload.mid = notification.mid;
+          }
+          if (!payload.messageType && notification.messageType) {
+            payload.messageType = notification.messageType;
+          }
+        }
+
+        payload.tap = tapState;
+        return payload;
+      }
+
+      function handleNotification(notification, tapState) {
+        $ionicPlatform.ready(function () {
+          var message = normalizeNotificationData(notification, tapState);
+
+          NVR.debug('push: EventServer: received push notification with payload:' + JSON.stringify(message));
+
+          if ($rootScope.platformOS != 'desktop') {
+            if (pushPlugin.setBadgeNumber) {
+              pushPlugin.setBadgeNumber({ badge: 0 }).catch(function (err) {
+                NVR.debug('push: Error clearing badge:' + JSON.stringify(err));
+              });
+            }
+            if (pushPlugin.removeAllDeliveredNotifications) {
+              pushPlugin.removeAllDeliveredNotifications().catch(function (err) {
+                NVR.debug('push: Error clearing delivered notifications:' + JSON.stringify(err));
+              });
+            }
+          }
+
+          var loginData = NVR.getLogin();
+          if (loginData.isUseEventServer == false) {
+            NVR.debug('push: EventServer: received push notification, but event server disabled. Not acting on it');
+            return;
+          }
+
+          NVR.debug('push: Message type received is:' + message.messageType);
+
+          sendMessage('push', {
+            type: 'badge',
+            badge: 0,
+          });
+
+          var mid;
+          var eid = message.eid;
+          if (message.mid) {
+            mid = message.mid;
+            var mi = mid.indexOf(',');
+            if (mi > 0) {
+              mid = mid.slice(0, mi);
+            }
+            mid = parseInt(mid, 10);
+          }
+
+          if (tapState == 'foreground') {
+            $rootScope.tappedNotification = 0;
+            $rootScope.tappedEid = 0;
+            $rootScope.tappedMid = 0;
+
+            if (loginData.soundOnPush && media && media.play) {
+              media.play({
+                playAudioWhenScreenIsLocked: false
+              });
+            }
+            if ($rootScope.alarmCount == '99') {
+              $rootScope.alarmCount = '99+';
+            }
+            if ($rootScope.alarmCount != '99+') {
+              $rootScope.alarmCount = (parseInt($rootScope.alarmCount) + 1).toString();
+            }
+            $rootScope.isAlarm = 1;
+          } else if (tapState == 'background') {
+            $rootScope.alarmCount = '0';
+            $rootScope.isAlarm = 0;
+            $rootScope.tappedNotification = 1;
+            $rootScope.tappedMid = mid;
+            $rootScope.tappedEid = eid;
+            NVR.log('EventServer: Push notification: Tapped Monitor taken as:' + $rootScope.tappedMid);
+
+            $timeout(function () {
+              NVR.debug('EventServer: broadcasting process-push');
+              $rootScope.$broadcast('process-push');
+            }, 100);
+          } else {
+            NVR.debug('push: message tap not defined');
+            $rootScope.tappedNotification = 0;
+            $rootScope.tappedEid = 0;
+            $rootScope.tappedMid = 0;
+          }
+        });
+      }
+
+      if (plat == 'android') {
+        var channel = {
+          id: 'zmninja',
+          description: 'zmNinja push',
+          name: 'zmNinja',
+          sound: 'default',
           vibration: true,
-          // Whether to blink the LED
           light: true,
-          //LED color in ARGB format - this example BLUE color. If set to -1, light color will be default. Default value: -1.
-          lightColor: parseInt("FF0000FF", 16).toString(),
-          //Importance - integer from 0 to 4. Default value: 4
-          //0 - none - no sound, does not show in the shade
-          //1 - min - no sound, only shows in the shade, below the fold
-          //2 - low - no sound, shows in the shade, and potentially in the status bar
-          //3 - default - shows everywhere, makes noise, but does not visually intrude
-          //4 - high - shows everywhere, makes noise and peeks
+          lightColor: parseInt('FF0000FF', 16).toString(),
           importance: 4,
-
-          //Show badge over app icon when non handled pushes are present. Default value: true
           badge: true,
-
-          //Show message on locked screen. Default value: 1
-          //Possible values (default 1):
-          //-1 - secret - Do not reveal any part of the notification on a secure lockscreen.
-          //0 - private - Show the notification on all lockscreens, but conceal sensitive or private information on secure lockscreens.
-          //1 - public - Show the notification in its entirety on all lockscreens.
           visibility: 1
         };
 
-        // Create the channel
-        window.FirebasePlugin.createChannel(channel,
-        function(){
-          NVR.debug('push: Channel created: ' + channel.id);
-        },
-        function(error){
-        NVR.debug('push: Create channel error: ' + error);
-        });
-      }
-
-      if ($rootScope.platformOS == 'ios') {
-        if (ld.isUseEventServer) {
-          NVR.debug ('push: ios, setting badge alarm count at start');
-          window.FirebasePlugin.getBadgeNumber(function(cnt) {
-            if (cnt) {
-              NVR.debug('push: ios, badge is:'+cnt);
-              $rootScope.isAlarm = 1;
-              $rootScope.alarmCount = cnt;
-              if ($rootScope.alarmCount > 99) {
-                $rootScope.alarmCount = '99+';
-              }
-            }
+        if (pushPlugin.createChannel) {
+          pushPlugin.createChannel(channel).then(function () {
+            NVR.debug('push: Channel created: ' + channel.id);
+          }).catch(function (error) {
+            NVR.debug('push: Create channel error: ' + JSON.stringify(error));
           });
         }
-      } // ios
-      //
-      // called when token is assigned
-      window.FirebasePlugin.onTokenRefresh(
-        function (token) {
-          NVR.debug("push: got token:"+token);
-          $rootScope.apnsToken = token;
-          NVR.debug ('push: setting up onMessageReceived...');
-          window.FirebasePlugin.onMessageReceived(function(message) {
-            $ionicPlatform.ready(function () {
+      }
 
-              NVR.debug("push: EventServer: received push notification with payload:"+JSON.stringify(message));
-
-              if ($rootScope.platformOS != 'desktop') {
-                NVR.debug ("push: clearing badge");
-                window.FirebasePlugin.setBadgeNumber(0);
-              }
-              
-              var ld = NVR.getLogin();
-              if (ld.isUseEventServer == false) {
-                NVR.debug("push: EventServer: received push notification, but event server disabled. Not acting on it");
-                return;
-              }
-              NVR.debug('push: Message type received is:'+message.messageType);
-              
-              sendMessage('push', {
-                type: 'badge',
-                badge: 0,
-              });
-              var mid;
-              var eid = message.eid;
-              if (message.mid) {
-                mid = message.mid;
-                var mi = mid.indexOf(',');
-                if (mi > 0) {
-                  mid = mid.slice(0, mi);
-                }
-                mid = parseInt(mid);
-              }
-              
-              if (message.tap=='foreground') {
-                console.log ('push: Foreground');
-                $rootScope.tappedNotification = 0;
-                $rootScope.tappedEid = 0;
-                $rootScope.tappedMid = 0;
-
-                if (ld.soundOnPush) {
-                  media.play({
-                    playAudioWhenScreenIsLocked: false
-                  });
-                }
-                if ($rootScope.alarmCount == "99") {
-                  $rootScope.alarmCount = "99+";
-                }
-                if ($rootScope.alarmCount != "99+") {
-                  $rootScope.alarmCount = (parseInt($rootScope.alarmCount) + 1).toString();
-                }
-                $rootScope.isAlarm = 1;
-
-              } else if (message.tap == 'background') {
-                $rootScope.alarmCount = "0";
-                $rootScope.isAlarm = 0;
-                $rootScope.tappedNotification = 1;
-                $rootScope.tappedMid = mid;
-                $rootScope.tappedEid = eid;
-                NVR.log("EventServer: Push notification: Tapped Monitor taken as:" + $rootScope.tappedMid);
-  
-                $timeout ( function () {
-                  NVR.debug ("EventServer: broadcasting process-push");
-                  $rootScope.$broadcast('process-push');
-                },100);
-  
-              } else {
-                NVR.debug ("push: message tap not defined");
-                $rootScope.tappedNotification = 0;
-                $rootScope.tappedEid = 0;
-                $rootScope.tappedMid = 0;
-              }
-
-            }); // ready
-          });
-        }, 
-        function (err) {
-          NVR.debug ('push: Error getting token:'+err);
+      if (plat == 'ios' && ld.isUseEventServer && pushPlugin.getDeliveredNotifications) {
+        pushPlugin.getDeliveredNotifications().then(function (result) {
+          var notifications = result && result.notifications ? result.notifications : [];
+          if (notifications.length) {
+            var cnt = notifications.length;
+            NVR.debug('push: ios, delivered notifications count is:' + cnt);
+            $rootScope.isAlarm = 1;
+            $rootScope.alarmCount = cnt > 99 ? '99+' : cnt.toString();
+          }
+        }).catch(function (err) {
+          NVR.debug('push: ios, error obtaining delivered notifications:' + JSON.stringify(err));
         });
-
-      if (plat == 'ios') {
-        mediasrc = "sounds/blop.mp3";
-       /* push = PushNotification.init(
-
-          {
-            "ios": {
-              "alert": "true",
-              "badge": "true",
-              "sound": "true",
-              //"sound": "true",
-              "clearBadge": "true",
-              //"fcmSandbox": "true"
-            }
-          }
-
-        );*/
-
-      } else {
-        mediasrc = "/android_asset/www/sounds/blop.mp3";
-        var android_media_file = "blop";
-
-       /* push = PushNotification.init(
-
-          {
-            "android": {
-              // "senderID": zm.gcmSenderId,
-              "icon": "ic_stat_notification",
-              sound: "true",
-              vibrate: "true",
-              //"sound": android_media_file
-            }
-          }
-
-        );*/
-
       }
 
-     /* PushNotification.hasPermission(function (succ) {
-        NVR.debug ("Push permission returned: "+JSON.stringify(succ));
-      }, function (err) {
-        NVR.debug ("Push permission error returned: "+JSON.stringify(err));
-      });*/
-      // console.log("*********** MEDIA BLOG IS " + mediasrc);
+      pushPlugin.addListener('registration', function (token) {
+        var tokenValue = token && token.value ? token.value : '';
+        if (!tokenValue) {
+          NVR.debug('push: registration returned empty token');
+          return;
+        }
 
-      try {
-        media = $cordovaMedia.newMedia(mediasrc);  
-      }
-      catch (err) {
-        NVR.debug ("Media init error:"+JSON.stringify(err));
-      }
+        NVR.debug('push: got token:' + tokenValue);
+        $rootScope.apnsToken = tokenValue;
+        registerTokenWithEventServer(tokenValue);
+      });
 
-      /*
-      push.on('registration', function (data) {
-        pushInited = true;
-        NVR.debug("EventServer: Push Notification registration ID received: " + JSON.stringify(data));
-        $rootScope.apnsToken = data.registrationId;
+      pushPlugin.addListener('registrationError', function (error) {
+        NVR.debug('push: Error during registration:' + JSON.stringify(error));
+      });
 
-        var plat = $rootScope.platformOS;
-        var ld = NVR.getLogin();
-        var pushstate = "enabled";
-        if (ld.disablePush == true)
-          pushstate = "disabled";
+      pushPlugin.addListener('pushNotificationReceived', function (notification) {
+        handleNotification(notification, 'foreground');
+      });
 
-        // now at this stage, if this is a first registration
-        // zmeventserver will have no record of this token
-        // so we need to make sure we send it a legit list of 
-        // monitors otherwise users will get notifications for monitors
-        // their login is not supposed to see. Refer #391
+      pushPlugin.addListener('pushNotificationActionPerformed', function (notification) {
+        if (notification && notification.notification) {
+          handleNotification(notification.notification, 'background');
+        } else {
+          NVR.debug('push: Action performed without notification payload');
+        }
+      });
 
-        var monstring = '';
-        var intstring = '';
-        NVR.getMonitors()
-          .then(function (succ) {
-              var mon = succ;
-
-              if (ld.eventServerMonitors != '') {
-                // load previous monlist and intlist
-                // so we don't overwrite 
-                monstring = ld.eventServerMonitors;
-                intstring = ld.eventServerInterval;
-                NVR.debug("EventServer: loading saved monitor list and interval of " + monstring + ">>" + intstring);
-
-              } else { // build new list
-
-                for (var i = 0; i < mon.length; i++) {
-                  monstring = monstring + mon[i].Monitor.Id + ",";
-                  intstring = intstring + '0,';
-                }
-                if (monstring.charAt(monstring.length - 1) == ',')
-                  monstring = monstring.substr(0, monstring.length - 1);
-
-                if (intstring.charAt(intstring.length - 1) == ',')
-                  intstring = intstring.substr(0, intstring.length - 1);
-
-              }
-
-              $rootScope.monstring = monstring;
-              $rootScope.intstring = intstring;
-
-              sendMessage('push', {
-                type: 'token',
-                platform: plat,
-                token: $rootScope.apnsToken,
-                monlist: monstring,
-                intlist: intstring,
-                state: pushstate
-              }, 1);
-
-            },
-            function (err) {
-              NVR.log("EventServer: Could not get monitors, can't send push reg");
-            });
-
-      }); */
-      
-      // add push code here
-    
+      pushPlugin.checkPermissions().then(function (status) {
+        if (status && status.receive === 'prompt' && pushPlugin.requestPermissions) {
+          return pushPlugin.requestPermissions();
+        }
+        return status;
+      }).then(function (status) {
+        if (!status || status.receive !== 'granted') {
+          NVR.log('push: Permission not granted for push');
+          return null;
+        }
+        return pushPlugin.register();
+      }).catch(function (error) {
+        NVR.debug('push: Error during permission/register flow:' + JSON.stringify(error));
+      });
     }
 
     return {

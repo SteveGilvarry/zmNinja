@@ -3,7 +3,7 @@
 /* jslint browser: true*/
 /* global saveAs, cordova,StatusBar,angular,console,ionic, moment, imagesLoaded, chrome */
 
-angular.module('zmApp.controllers').controller('MonitorModalCtrl', ['$scope', '$rootScope', 'zm', 'NVR', '$ionicSideMenuDelegate', '$timeout', '$interval', '$ionicModal', '$ionicLoading', '$http', '$state', '$stateParams', '$ionicHistory', '$ionicScrollDelegate', '$q', '$sce', 'carouselUtils', '$ionicPopup', 'SecuredPopups', '$translate', '$cordovaFile', function ($scope, $rootScope, zm, NVR, $ionicSideMenuDelegate, $timeout, $interval, $ionicModal, $ionicLoading, $http, $state, $stateParams, $ionicHistory, $ionicScrollDelegate, $q, $sce, carouselUtils, $ionicPopup, SecuredPopups, $translate, $cordovaFile) {
+angular.module('zmApp.controllers').controller('MonitorModalCtrl', ['$scope', '$rootScope', 'zm', 'NVR', '$ionicSideMenuDelegate', '$timeout', '$interval', '$ionicModal', '$ionicLoading', '$http', '$state', '$stateParams', '$ionicHistory', '$ionicScrollDelegate', '$q', '$sce', 'carouselUtils', '$ionicPopup', 'SecuredPopups', '$translate', 'MediaHelper', function ($scope, $rootScope, zm, NVR, $ionicSideMenuDelegate, $timeout, $interval, $ionicModal, $ionicLoading, $http, $state, $stateParams, $ionicHistory, $ionicScrollDelegate, $q, $sce, carouselUtils, $ionicPopup, SecuredPopups, $translate, MediaHelper) {
 
   $scope.displayControls = true;
   $scope.animationInProgress = false;
@@ -984,7 +984,13 @@ angular.module('zmApp.controllers').controller('MonitorModalCtrl', ['$scope', '$
       noBackdrop: true,
       duration: 3000
     });
-    NVR.log("Error saving image: " + e);
+    if (e) {
+      try {
+        NVR.debug("Error saving image: " + JSON.stringify(e));
+      } catch (ex) {
+        NVR.debug("Error saving image: " + e);
+      }
+    }
     //console.log("***ERROR");
   }
 
@@ -1109,23 +1115,13 @@ angular.module('zmApp.controllers').controller('MonitorModalCtrl', ['$scope', '$
     }
 
     NVR.debug("ModalCtrl: Permission checking for write");
-    var permissions = cordova.plugins.permissions;
-    permissions.checkPermission(permissions.WRITE_EXTERNAL_STORAGE, checkPermissionCallback, null);
-
-    function checkPermissionCallback(status) {
-      if (!status.checkPermission) {
-        SaveError("No permission to write to external storage");
-      }
-      permissions.requestPermission(permissions.WRITE_EXTERNAL_STORAGE, succ, err);
-    }
-
-    function succ(s) {
-      saveLiveImageToPhone(mid);
-    }
-
-    function err(e) {
-      SaveError("Error in requestPermission");
-    }
+    MediaHelper.requestPermissions()
+      .then(function () {
+        saveLiveImageToPhone(mid);
+      })
+      .catch(function (err) {
+        SaveError(err);
+      });
   };
 
   function saveLiveImageToPhone(mid) {
@@ -1150,62 +1146,37 @@ angular.module('zmApp.controllers').controller('MonitorModalCtrl', ['$scope', '$
     if ($rootScope.platformOS != 'desktop') {
       var album = 'zmNinja';
       NVR.debug("Trying to save image to album: " + album);
-      cordova.plugins.photoLibrary.requestAuthorization(
-        function () {
-          //url = "https://picsum.photos/200/300/?random";
+      var timestamp = moment().format('MMM-Do-YY-HH-mm-ss');
+      var fname = "zmninja-mid-" + mid + '-' + timestamp + ".jpg";
+      var fetchOptions = {};
+      if ($rootScope.basicAuthHeader) {
+        fetchOptions.headers = {
+          'Authorization': $rootScope.basicAuthHeader
+        };
+      }
 
-          var fileTransfer = new FileTransfer();
-          var urle = encodeURI(url);
-          var timestamp=moment().format('MMM-Do-YY-HH-mm-ss');
-          var fname = "zmninja-mid-"+mid+'-'+timestamp+".jpg";
-
-          fileTransfer.download(urle, cordova.file.dataDirectory + fname,
-            function (entry) {
-              NVR.debug("local download complete: " + entry.toURL());
-              NVR.debug("Now trying to move it to album");
-              cordova.plugins.photoLibrary.saveImage(entry.nativeURL, album,
-                function (cameraRollAssetId) {
-                  SaveSuccess();
-                  $cordovaFile.removeFile(cordova.file.dataDirectory, fname)
-                    .then(
-                      function () {
-                        NVR.debug("file removed from data directory");
-                      },
-                      function (e) {
-                        NVR.debug("could not delete temp file: " + JSON.stringify(e));
-                      }
-                    );
-
-
-                },
-                function (err) {
-                  NVR.debug("Saving error:" + JSON.stringify(err));
-                  SaveError();
-
-                });
-
-            },
-            function (err) {
-              NVR.debug("error downloading:" + JSON.stringify(err));
-              SaveError();
-            }, !loginData.enableStrictSSL, {});
-
-
-
-
-          // User gave us permission to his library, retry reading it!
-        },
-        function (err) {
-          // User denied the access
-          NVR.debug("Permission not granted");
-          SaveError();
-        }, // if options not provided, defaults to {read: true}.
-
-        {
-          read: true,
-          write: true
+      MediaHelper.savePhotoFromUrl(url, {
+        fileName: fname,
+        album: album,
+        headers: fetchOptions.headers,
+        onProgress: function (perc) {
+          $timeout(function () {
+            $ionicLoading.show({
+              template: $translate.instant('kPleaseWait') + "... (" + perc + "%)",
+              noBackdrop: true
+            });
+          });
         }
-      );
+      })
+        .then(function () {
+          SaveSuccess();
+          $ionicLoading.hide();
+        })
+        .catch(function (err) {
+          NVR.debug("Saving error:" + JSON.stringify(err));
+          $ionicLoading.hide();
+          SaveError(err);
+        });
     } else {
 
       $ionicLoading.hide();

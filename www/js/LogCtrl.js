@@ -112,33 +112,36 @@ angular.module('zmApp.controllers').controller('zmApp.LogCtrl', ['$scope', '$roo
 
     $fileLogger.checkFile()
       .then(function (d) {
-          var fileWithPath = cordova.file.dataDirectory + d.name;
-          NVR.log("file location:" + fileWithPath);
+        var fileWithPath = d && d.uri ? d.uri : null;
+        if (!fileWithPath) {
+          throw new Error('Log path unavailable');
+        }
+        NVR.log("file location:" + fileWithPath);
 
-          var onSuccess = function (result) {
-            NVR.log("Share completed? " + result.completed);
-            NVR.log("Shared to app: " + result.app);
-          };
+        var onSuccess = function (result) {
+          NVR.log("Share completed? " + result.completed);
+          NVR.log("Shared to app: " + result.app);
+        };
 
-          var onError = function (msg) {
-            NVR.log("Sharing failed with message: " + msg);
-          };
+        var onError = function (msg) {
+          NVR.log("Sharing failed with message: " + msg);
+        };
 
-          window.plugins.socialsharing.shareViaEmail(
-            body, //body
-            'zmNinja Logs attached', // subject
-            [zm.authoremail], //to
-            null, // cc
-            null, //bcc
-            [fileWithPath],
-            onSuccess,
-            onError
-          );
+        window.plugins.socialsharing.shareViaEmail(
+          body, //body
+          'zmNinja Logs attached', // subject
+          [zm.authoremail], //to
+          null, // cc
+          null, //bcc
+          [fileWithPath],
+          onSuccess,
+          onError
+        );
 
-        },
-        function (e) {
-          NVR.debug("Error attaching log file:" + JSON.stringify(e));
-        });
+      })
+      .catch(function (e) {
+        NVR.debug("Error attaching log file:" + JSON.stringify(e));
+      });
 
 
   };

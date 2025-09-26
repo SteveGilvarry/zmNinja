@@ -10,10 +10,10 @@
 // install    : cordova plugin add cordova-plugin-file
 // date format: https://docs.angularjs.org/api/ng/filter/date
 
-angular.module('fileLogger', ['ngCordova.plugins.file'])
+angular.module('fileLogger', [])
 
-  .factory('$fileLogger', ['$q', '$window', '$cordovaFile', '$timeout', '$filter',
-    function ($q, $window, $cordovaFile, $timeout, $filter) {
+  .factory('$fileLogger', ['$q', '$window', '$timeout', '$filter',
+    function ($q, $window, $timeout, $filter) {
 
     'use strict';
 
@@ -26,6 +26,14 @@ angular.module('fileLogger', ['ngCordova.plugins.file'])
 
     var dateFormat;
     var dateTimezone;
+
+    function getFilesystem() {
+      var cap = window.Capacitor || {};
+      var plugins = cap.Plugins || {};
+      return plugins.Filesystem || null;
+    }
+
+    var DEFAULT_DIRECTORY = 'DATA';
 
     // detecting Ripple Emulator
     // https://gist.github.com/triceam/4658021
@@ -177,35 +185,32 @@ angular.module('fileLogger', ['ngCordova.plugins.file'])
 
       } else {
 
-        if (!$window.cordova || !$window.cordova.file || !$window.cordova.file.dataDirectory) {
-          q.reject('cordova.file.dataDirectory is not available');
+        var Filesystem = getFilesystem();
+        if (!Filesystem) {
+          q.reject('Capacitor Filesystem is not available');
           return q.promise;
         }
 
-        $cordovaFile.checkFile(cordova.file.dataDirectory, storageFilename).then(
-          function() {
-            // writeExistingFile(path, fileName, text)
-            $cordovaFile.writeExistingFile(cordova.file.dataDirectory, storageFilename, message).then(
-              function() {
-                q.resolve();
-              },
-              function(error) {
-                q.reject(error);
-              }
-            );
-          },
-          function() {
-            // writeFile(path, fileName, text, replaceBool)
-            $cordovaFile.writeFile(cordova.file.dataDirectory, storageFilename, message, true).then(
-              function() {
-                q.resolve();
-              },
-              function(error) {
-                q.reject(error);
-              }
-            );
-          }
-        );
+        Filesystem.appendFile({
+          path: storageFilename,
+          data: message,
+          directory: DEFAULT_DIRECTORY,
+          encoding: 'utf8'
+        }).then(function () {
+          q.resolve();
+        }).catch(function () {
+          Filesystem.writeFile({
+            path: storageFilename,
+            data: message,
+            directory: DEFAULT_DIRECTORY,
+            encoding: 'utf8',
+            recursive: true
+          }).then(function () {
+            q.resolve();
+          }).catch(function (error) {
+            q.reject(error);
+          });
+        });
 
       }
 
@@ -220,19 +225,21 @@ angular.module('fileLogger', ['ngCordova.plugins.file'])
         q.resolve($window.localStorage[storageFilename]);
       } else {
 
-        if (!$window.cordova || !$window.cordova.file || !$window.cordova.file.dataDirectory) {
-          q.reject('cordova.file.dataDirectory is not available');
+        var Filesystem = getFilesystem();
+        if (!Filesystem) {
+          q.reject('Capacitor Filesystem is not available');
           return q.promise;
         }
 
-        $cordovaFile.readAsText(cordova.file.dataDirectory, storageFilename).then(
-          function(result) {
-            q.resolve(result);
-          },
-          function(error) {
-            q.reject(error);
-          }
-        );
+        Filesystem.readFile({
+          path: storageFilename,
+          directory: DEFAULT_DIRECTORY,
+          encoding: 'utf8'
+        }).then(function (result) {
+          q.resolve(result.data || '');
+        }, function (error) {
+          q.reject(error);
+        });
       }
 
       return q.promise;
@@ -247,19 +254,20 @@ angular.module('fileLogger', ['ngCordova.plugins.file'])
         q.resolve();
       } else {
 
-        if (!$window.cordova || !$window.cordova.file || !$window.cordova.file.dataDirectory) {
-          q.reject('cordova.file.dataDirectory is not available');
+        var Filesystem = getFilesystem();
+        if (!Filesystem) {
+          q.reject('Capacitor Filesystem is not available');
           return q.promise;
         }
 
-        $cordovaFile.removeFile(cordova.file.dataDirectory, storageFilename).then(
-          function(result) {
-            q.resolve(result);
-          },
-          function(error) {
-            q.reject(error);
-          }
-        );
+        Filesystem.deleteFile({
+          path: storageFilename,
+          directory: DEFAULT_DIRECTORY
+        }).then(function (result) {
+          q.resolve(result);
+        }, function (error) {
+          q.reject(error);
+        });
       }
 
       return q.promise;
@@ -295,22 +303,53 @@ angular.module('fileLogger', ['ngCordova.plugins.file'])
       if (isBrowser()) {
 
         q.resolve({
-          'name': storageFilename,
-          'localURL': 'localStorage://localhost/' + storageFilename,
-          'type': 'text/plain',
-          'size': ($window.localStorage[storageFilename] ? $window.localStorage[storageFilename].length : 0)
+          name: storageFilename,
+          uri: null,
+          size: ($window.localStorage[storageFilename] ? $window.localStorage[storageFilename].length : 0)
         });
 
       } else {
 
-        if (!$window.cordova || !$window.cordova.file || !$window.cordova.file.dataDirectory) {
-          q.reject('cordova.file.dataDirectory is not available');
+        var Filesystem = getFilesystem();
+        if (!Filesystem) {
+          q.reject('Capacitor Filesystem is not available');
           return q.promise;
         }
 
-        $cordovaFile.checkFile(cordova.file.dataDirectory, storageFilename).then(function(fileEntry) {
-          fileEntry.file(q.resolve, q.reject);
-        }, q.reject);
+        Filesystem.stat({
+          path: storageFilename,
+          directory: DEFAULT_DIRECTORY
+        }).then(function (info) {
+          return Filesystem.getUri({
+            path: storageFilename,
+            directory: DEFAULT_DIRECTORY
+          }).then(function (uriRes) {
+            q.resolve({
+              name: storageFilename,
+              uri: uriRes.uri,
+              size: info.size
+            });
+          });
+        }).catch(function () {
+          Filesystem.writeFile({
+            path: storageFilename,
+            data: '',
+            directory: DEFAULT_DIRECTORY,
+            encoding: 'utf8',
+            recursive: true
+          }).then(function () {
+            return Filesystem.getUri({
+              path: storageFilename,
+              directory: DEFAULT_DIRECTORY
+            }).then(function (uriRes) {
+              q.resolve({
+                name: storageFilename,
+                uri: uriRes.uri,
+                size: 0
+              });
+            });
+          }).catch(q.reject);
+        });
 
       }
 

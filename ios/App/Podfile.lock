@@ -1,0 +1,114 @@
+PODS:
+  - Capacitor (7.4.3):
+    - CapacitorCordova
+  - CapacitorApp (7.1.0):
+    - Capacitor
+  - CapacitorCommunityMedia (8.0.1):
+    - Capacitor
+    - SDWebImage
+  - CapacitorCordova (7.4.3)
+  - CapacitorFilesystem (7.1.4):
+    - Capacitor
+    - IONFilesystemLib (~> 1.0.1)
+  - CapacitorFileTransfer (1.0.5):
+    - Capacitor
+    - IONFileTransferLib (~> 1.0.1)
+  - CapacitorHaptics (7.0.2):
+    - Capacitor
+  - CapacitorKeyboard (7.0.3):
+    - Capacitor
+  - CapacitorPushNotifications (7.0.3):
+    - Capacitor
+  - CapacitorSplashScreen (7.0.3):
+    - Capacitor
+  - CapacitorStatusBar (7.0.3):
+    - Capacitor
+  - CordovaPlugins (7.4.3):
+    - CapacitorCordova
+  - CordovaPluginsResources (0.0.105)
+  - CordovaPluginsStatic (7.4.3):
+    - CapacitorCordova
+    - SocketRocket (= 0.7.0)
+  - IONFilesystemLib (1.0.1)
+  - IONFileTransferLib (1.0.1)
+  - SDWebImage (5.21.2):
+    - SDWebImage/Core (= 5.21.2)
+  - SDWebImage/Core (5.21.2)
+  - SocketRocket (0.7.0)
+
+DEPENDENCIES:
+  - "Capacitor (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorApp (from `../../node_modules/@capacitor/app`)"
+  - "CapacitorCommunityMedia (from `../../node_modules/@capacitor-community/media`)"
+  - "CapacitorCordova (from `../../node_modules/@capacitor/ios`)"
+  - "CapacitorFilesystem (from `../../node_modules/@capacitor/filesystem`)"
+  - "CapacitorFileTransfer (from `../../node_modules/@capacitor/file-transfer`)"
+  - "CapacitorHaptics (from `../../node_modules/@capacitor/haptics`)"
+  - "CapacitorKeyboard (from `../../node_modules/@capacitor/keyboard`)"
+  - "CapacitorPushNotifications (from `../../node_modules/@capacitor/push-notifications`)"
+  - "CapacitorSplashScreen (from `../../node_modules/@capacitor/splash-screen`)"
+  - "CapacitorStatusBar (from `../../node_modules/@capacitor/status-bar`)"
+  - CordovaPlugins (from `../capacitor-cordova-ios-plugins`)
+  - CordovaPluginsResources (from `../capacitor-cordova-ios-plugins`)
+  - CordovaPluginsStatic (from `../capacitor-cordova-ios-plugins`)
+
+SPEC REPOS:
+  trunk:
+    - IONFilesystemLib
+    - IONFileTransferLib
+    - SDWebImage
+    - SocketRocket
+
+EXTERNAL SOURCES:
+  Capacitor:
+    :path: "../../node_modules/@capacitor/ios"
+  CapacitorApp:
+    :path: "../../node_modules/@capacitor/app"
+  CapacitorCommunityMedia:
+    :path: "../../node_modules/@capacitor-community/media"
+  CapacitorCordova:
+    :path: "../../node_modules/@capacitor/ios"
+  CapacitorFilesystem:
+    :path: "../../node_modules/@capacitor/filesystem"
+  CapacitorFileTransfer:
+    :path: "../../node_modules/@capacitor/file-transfer"
+  CapacitorHaptics:
+    :path: "../../node_modules/@capacitor/haptics"
+  CapacitorKeyboard:
+    :path: "../../node_modules/@capacitor/keyboard"
+  CapacitorPushNotifications:
+    :path: "../../node_modules/@capacitor/push-notifications"
+  CapacitorSplashScreen:
+    :path: "../../node_modules/@capacitor/splash-screen"
+  CapacitorStatusBar:
+    :path: "../../node_modules/@capacitor/status-bar"
+  CordovaPlugins:
+    :path: "../capacitor-cordova-ios-plugins"
+  CordovaPluginsResources:
+    :path: "../capacitor-cordova-ios-plugins"
+  CordovaPluginsStatic:
+    :path: "../capacitor-cordova-ios-plugins"
+
+SPEC CHECKSUMS:
+  Capacitor: 28d6c01026a9a3f7156529498ec1f389a2a28dbc
+  CapacitorApp: 26587c2ce485d88ddb39adb21cac64f8e481afe3
+  CapacitorCommunityMedia: d1538b56a3303298e7cf45a18b11e624fbcbdc8e
+  CapacitorCordova: 435121e81a2df4d0034f0fb11fcefab5104cfdb5
+  CapacitorFilesystem: f9bd850c41e048180e5dc0cbb90f2033ede9d2cc
+  CapacitorFileTransfer: 10ebf2c246d5e579d6c32aa995f0317154c13f66
+  CapacitorHaptics: b3fb2869e72c4466e18ce9ccbeb60a3d8723b3d4
+  CapacitorKeyboard: 62f36104f26d53d8b3a2a43f2a69fe714f1777d5
+  CapacitorPushNotifications: bdd621fbd562be34a41f4a7b1750efa000447d5a
+  CapacitorSplashScreen: e388b8e0ed0e982a9d3a40417f478e7a018a8763
+  CapacitorStatusBar: 0659ddc7b1713764a05831463d215b177a15d054
+  CordovaPlugins: 50dfe3c64a394dff9fc776c078feb5700e266e88
+  CordovaPluginsResources: da93847212bf7b16ba770e4d6c3e7dba820174c7
+  CordovaPluginsStatic: 0f3c3fed0227ccf5c01d19c260341e875fb5a52e
+  IONFilesystemLib: 89258b8e3e85465da93127d25d7ce37f977e8a6f
+  IONFileTransferLib: b268561ab0ba7f386eea228c4986b55ba0146ca9
+  SDWebImage: 9f177d83116802728e122410fb25ad88f5c7608a
+  SocketRocket: abac6f5de4d4d62d24e11868d7a2f427e0ef940d
+
+PODFILE CHECKSUM: 6f3fcf8db01de05777735250a8aa9ac8e2769e79
+
+COCOAPODS: 1.16.2

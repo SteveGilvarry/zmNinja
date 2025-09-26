@@ -1,6 +1,6 @@
 /* jshint -W041, -W093 */
 /* jslint browser: true*/
-/* global cordova,StatusBar,angular,console,alert,PushNotification, moment ,ionic, URI,Packery, ConnectSDK, CryptoJS, ContactFindOptions, localforage,$, Connection, MobileAccessibility, hello */
+/* global cordova,angular,console,alert, moment ,ionic, URI,Packery, ConnectSDK, CryptoJS, ContactFindOptions, localforage,$, Connection, MobileAccessibility, hello */
 
 // core app start stuff
 angular.module('zmApp', [
@@ -11,7 +11,7 @@ angular.module('zmApp', [
   'fileLogger',
   'angular-carousel',
   'angularAwesomeSlider',
-  'com.2fdevs.videogular', 
+  'com.2fdevs.videogular',
   'com.2fdevs.videogular.plugins.controls',
   'com.2fdevs.videogular.plugins.overlayplay',
   'mgo-angular-wizard',
@@ -97,7 +97,7 @@ angular.module('zmApp', [
     streamQueryStatusTimeLowBW: 30000, // 30 sec
     eventCheckTime: 30000, // 30 seconds
     eventServerErrorDelay: 5000, // time to wait till I report initial connect errors
-    zmVersionCheckNag: 60 * 24, // in hrs 
+    zmVersionCheckNag: 60 * 24, // in hrs
     waitTimeTillResume: 5, // in sec, for ES error
     versionWithLoginAPI: "1.31.47",
     androidBackupKey: "AEdPqrEAAAAIqF-OaHdwIzZhx2L1WOfAGTagBxm5a1R4wBW_Uw",
@@ -250,7 +250,7 @@ angular.module('zmApp', [
   })
 
 // this can be used to route img-src through interceptors. Works well, but when
-// nph-zms streams images it doesn't work as success is never received 
+// nph-zms streams images it doesn't work as success is never received
 // (keeps reading data). Hence not using it now
 //credit: http://stackoverflow.com/questions/34958575/intercepting-img-src-via-http-interceptor-as-well-as-not-lose-the-ability-to-kee
   .directive('httpSrc', [
@@ -416,7 +416,7 @@ angular.module('zmApp', [
   ])
 
 //------------------------------------------------------------------
-// this directive will be called any time an image completes loading 
+// this directive will be called any time an image completes loading
 // via img tags where this directive is added (I am using this in
 // events and monitor view to show a loader while the image is
 // downloading from ZM
@@ -469,7 +469,7 @@ angular.module('zmApp', [
 
           });
 
-          // show an image-missing image 
+          // show an image-missing image
           $element.bind('error', function () {
             loader.remove();
 
@@ -535,7 +535,7 @@ angular.module('zmApp', [
                 //console.log ("rendered");
 
                 // lets wait for 2 frames for animation
-                // to render - hoping this will improve tear 
+                // to render - hoping this will improve tear
                 // of images
                 ionic.DomUtil.requestAnimationFrame(
                   function () {
@@ -565,7 +565,7 @@ angular.module('zmApp', [
               if (ld.isUseAuth && ($rootScope.authSession=='')) {
                 NVR.log("waiting for authSession to have a value...");
               } else if ($attributes.imageSpinnerSrc) {
-                $element[0].src = $attributes.imageSpinnerSrc; // set src 
+                $element[0].src = $attributes.imageSpinnerSrc; // set src
               } else {
                 NVR.log("No imageSpinnerSrc!");
               }
@@ -741,7 +741,7 @@ angular.module('zmApp', [
         NVR.log ('-----> got token expiry broadcast, but login in progress, not acting');
       } else {
         NVR.log ('-----> Access token is about to expire, re-doing login');
-        _doLogin("");  
+        _doLogin("");
       }
     });
 
@@ -931,7 +931,7 @@ angular.module('zmApp', [
         NVR.debug('We will relogin every '+timeInterval/1000+' seconds, token supported='+ld.isTokenSupported);
         zmAutoLoginHandle = $interval(function () {
           _doLogin("");
-        }, timeInterval); 
+        }, timeInterval);
       }
     }
 
@@ -953,7 +953,7 @@ angular.module('zmApp', [
   // First run in ionic
   //====================================================================
 
-  .run(function ($ionicPlatform, $ionicPopup, $rootScope, zm, $state, $stateParams, NVR, $cordovaSplashscreen, $http, $interval, zmAutoLogin, zmCheckUpdates, $fileLogger, $timeout, $ionicHistory, $window, $ionicSideMenuDelegate, EventServer, $ionicContentBanner, $ionicLoading, /* $ionicNativeTransitions,*/ $translate, $localstorage) {
+  .run(function ($ionicPlatform, $ionicPopup, $rootScope, zm, $state, $stateParams, NVR, $http, $interval, zmAutoLogin, zmCheckUpdates, $fileLogger, $timeout, $ionicHistory, $window, $ionicSideMenuDelegate, EventServer, $ionicContentBanner, $ionicLoading, /* $ionicNativeTransitions,*/ $translate, $localstorage) {
     $ionicPlatform.ready(function () {
       $fileLogger.setStorageFilename(zm.logFile);
       $fileLogger.setTimestampFormat('MMM d, y ' + NVR.getTimeFormatMilliSec());
@@ -1282,7 +1282,7 @@ NVR.log("Not registering D-PAD handler, as you are not on android");
       window.addEventListener("resize", checkOrientation, false);
 
       // we come here when a user forcibly cancels portal auth
-      // useful when you know your auth won't succeed and you need to 
+      // useful when you know your auth won't succeed and you need to
       // switch to another server
       $rootScope.cancelAuth = function () {
         $ionicLoading.hide();
@@ -1491,15 +1491,16 @@ $state.transitionTo('app.invalidapi');*/
         $rootScope.$state = $state;
         $rootScope.$stateParams = $stateParams;
 
-        if (window.StatusBar) {
-          // org.apache.cordova.statusbar required
-          NVR.log("Updating statusbar");
-          StatusBar.styleDefault();
-          StatusBar.backgroundColorByHexString("#2980b9");
-        }
+        NVR.log("Applying default status bar appearance");
+        NVR.applyDefaultStatusBarStyle();
 
         if (window.cordova) {
-          $cordovaSplashscreen.hide();
+          // Replace with this Capacitor-compatible approach:
+          if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) {
+            window.Capacitor.Plugins.SplashScreen.hide();
+          } else {
+            console.log('Capacitor splash screen not available');
+          }
           cordova.getAppVersion.getVersionNumber().then(function (version) {
             NVR.log("App Version: " + version);
             NVR.setAppVersion(version);
@@ -1695,7 +1696,7 @@ $state.transitionTo('app.invalidapi');*/
     //$logProvider.debugEnabled(false);
     //$compileProvider.debugInfoEnabled(false);
 
-    // This is an exception interceptor so it can show up in app logs 
+    // This is an exception interceptor so it can show up in app logs
     // if they occur. I suspect digest and other errors will be useful
     // for me to see
     //$compileProvider.aHrefSanitizationWhitelist(/^\s*(https?|cdvphotolibrary):/);
@@ -1710,11 +1711,11 @@ $state.transitionTo('app.invalidapi');*/
 
           $delegate(exception, cause);
         };
-      }]); 
+      }]);
 
 
       // Wraps around $http that switches between browser XHR
-      // or cordova-advanced-http based on if cordova is available 
+      // or cordova-advanced-http based on if cordova is available
       // credits:
       // a) https://www.exratione.com/2013/08/angularjs-wrapping-http-for-fun-and-profit/
       // b) https://gist.github.com/adamreisnz/354364e2a58786e2be71
@@ -1740,7 +1741,7 @@ $state.transitionTo('app.invalidapi');*/
               method: method,
               data: dataPayload,
               headers: arguments[0].headers,
-              // timeout: arguments[0].timeout, 
+              // timeout: arguments[0].timeout,
               responseType: arguments[0].responseType,
               skipIntercept:skipIntercept
             };
@@ -1797,11 +1798,11 @@ $state.transitionTo('app.invalidapi');*/
                       nvr.debug("** Native, tokens generated, retrying old request with skipIntercept = true");
                       url = url.replace(/&token=([^&]*)/, nvr.authSession);
                       options.skipIntercept = true;
-                      cordova.plugin.http.sendRequest(url, options, 
+                      cordova.plugin.http.sendRequest(url, options,
                         function (succ) {
                           d.resolve(succ);
                           return d.promise;
-                        }, 
+                        },
                         function (err) {
                           d.reject(err);
                           return d.promise;
@@ -2224,7 +2225,7 @@ return NVR.getMonitors(0);
 
       });
 
-    // We are NOT going to default route. Routing to a view will start on 
-    // a broadcast of "init-complete" 
+    // We are NOT going to default route. Routing to a view will start on
+    // a broadcast of "init-complete"
 
   }); //config

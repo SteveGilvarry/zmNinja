@@ -25,3 +25,5 @@ dist/
 
 
 www/templates/zmNinja.code-workspace
+resources/.DS_Store
+resources/ios/.DS_Store

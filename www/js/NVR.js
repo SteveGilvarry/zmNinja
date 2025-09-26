@@ -2,7 +2,7 @@
 /* jshint esversion: 6 */
 
 /* jslint browser: true*/
-/* global cordova,StatusBar,angular,console, URI, moment, localforage, CryptoJS, Connection, LZString */
+/* global cordova,angular,console, URI, moment, localforage, CryptoJS, Connection, LZString */
 
 // This is my central data respository and common functions
 // that many other controllers use
@@ -380,6 +380,90 @@ angular.module('zmApp.controllers')
           });
           console.log(val);
         }
+      }
+
+      function getCapacitorPlugin(pluginName) {
+        if (typeof window === 'undefined' || !window.Capacitor) {
+          return null;
+        }
+
+        if (window.Capacitor.Plugins && window.Capacitor.Plugins[pluginName]) {
+          return window.Capacitor.Plugins[pluginName];
+        }
+
+        if (window.Capacitor[pluginName]) {
+          return window.Capacitor[pluginName];
+        }
+
+        var altName = 'Capacitor' + pluginName;
+        if (window[altName]) {
+          return window[altName];
+        }
+
+        return null;
+      }
+
+      function getStatusBarPlugin() {
+        return getCapacitorPlugin('StatusBar');
+      }
+
+      function setStatusBarVisible(visible) {
+        var plugin = getStatusBarPlugin();
+        if (!plugin) {
+          debug('StatusBar plugin not available to set visibility to ' + visible);
+          return $q.when();
+        }
+
+        var action = visible ? plugin.show : plugin.hide;
+        if (typeof action !== 'function') {
+          debug('StatusBar plugin missing ' + (visible ? 'show' : 'hide') + ' method');
+          return $q.when();
+        }
+
+        return action.call(plugin).catch(function (err) {
+          debug('StatusBar visibility error: ' + JSON.stringify(err));
+        });
+      }
+
+      function setStatusBarStyle(styleOptions) {
+        var plugin = getStatusBarPlugin();
+        if (!plugin || typeof plugin.setStyle !== 'function') {
+          debug('StatusBar setStyle not available');
+          return $q.when();
+        }
+
+        return plugin.setStyle(styleOptions).catch(function (err) {
+          debug('StatusBar style error: ' + JSON.stringify(err));
+        });
+      }
+
+      function setStatusBarColor(color) {
+        var plugin = getStatusBarPlugin();
+        if (!plugin || typeof plugin.setBackgroundColor !== 'function') {
+          debug('StatusBar setBackgroundColor not available');
+          return $q.when();
+        }
+
+        return plugin.setBackgroundColor({
+          color: color
+        }).catch(function (err) {
+          debug('StatusBar color error: ' + JSON.stringify(err));
+        });
+      }
+
+      function applyDefaultStatusBarStyle() {
+        var plugin = getStatusBarPlugin();
+        if (!plugin) {
+          debug('StatusBar plugin not available when applying defaults');
+          return $q.when();
+        }
+
+        return $q.all([
+          setStatusBarStyle({
+            style: 'DARK'
+          }),
+          setStatusBarColor('#2980b9')
+        ]);
       }
 
       function object_to_query_string(obj) {
@@ -1819,6 +1903,22 @@ angular.module('zmApp.controllers')
 
         get_unsupported: function (data) {
           return get_unsupported(data);
+        },
+
+        applyDefaultStatusBarStyle: function () {
+          return applyDefaultStatusBarStyle();
+        },
+
+        showStatusBar: function () {
+          return setStatusBarVisible(true);
+        },
+
+        hideStatusBar: function () {
+          return setStatusBarVisible(false);
+        },
+
+        getStatusBarPlugin: function () {
+          return getStatusBarPlugin();
         },
 
         encrypt: function(data) {
