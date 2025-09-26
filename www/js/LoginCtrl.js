@@ -2,7 +2,7 @@
 /* jslint browser: true*/
 /* global cordova,StatusBar,angular,console,alert,URI, localforage */
 
-angular.module('zmApp.controllers').controller('zmApp.LoginCtrl', ['$scope', '$rootScope', 'zm', '$ionicModal', 'NVR', '$ionicSideMenuDelegate', '$ionicPopup', '$http', '$q', '$ionicLoading', 'zmAutoLogin', '$cordovaPinDialog', 'EventServer', '$ionicHistory', '$state', '$ionicActionSheet', 'SecuredPopups', '$stateParams', '$translate', function ($scope, $rootScope, zm, $ionicModal, NVR, $ionicSideMenuDelegate, $ionicPopup, $http, $q, $ionicLoading, zmAutoLogin, $cordovaPinDialog, EventServer, $ionicHistory, $state, $ionicActionSheet, SecuredPopups, $stateParams, $translate) {
+angular.module('zmApp.controllers').controller('zmApp.LoginCtrl', ['$scope', '$rootScope', 'zm', '$ionicModal', 'NVR', '$ionicSideMenuDelegate', '$ionicPopup', '$http', '$q', '$ionicLoading', 'zmAutoLogin', 'EventServer', '$ionicHistory', '$state', '$ionicActionSheet', 'SecuredPopups', '$stateParams', '$translate', function ($scope, $rootScope, zm, $ionicModal, NVR, $ionicSideMenuDelegate, $ionicPopup, $http, $q, $ionicLoading, zmAutoLogin, EventServer, $ionicHistory, $state, $ionicActionSheet, SecuredPopups, $stateParams, $translate) {
 
   var oldLoginData = ''; // used to track any changes    
   $scope.openMenu = function () {
@@ -449,36 +449,71 @@ function mobilePinConfig () {
   NVR.log("Password prompt");
   if ($scope.loginData.usePin) {
     $scope.loginData.pinCode = "";
-    $cordovaPinDialog.prompt($translate.instant('kEnterPin'), $translate.instant('kPinProtect')).then(
-      function (result1) {
-        // console.log (JSON.stringify(result1));
-        if (result1.input1 && result1.buttonIndex == 1) {
-          $cordovaPinDialog.prompt($translate.instant('kReconfirmPin'), $translate.instant('kPinProtect'))
-            .then(function (result2) {
-              if (result1.input1 == result2.input1) {
-                NVR.log("Pin code match");
-                $scope.loginData.pinCode = result1.input1;
-              } else {
-                NVR.log("Pin code mismatch");
-                $scope.loginData.usePin = false;
-                NVR.displayBanner('error', [$translate.instant('kBannerPinMismatch')]);
-              }
-            },
-              function (error) {
-                //console.log("Error inside");
-                $scope.loginData.usePin = false;
-              });
-        } else {
-          $scope.loginData.usePin = false;
-        }
-      },
-      function (error) {
-        //console.log("Error outside");
+    promptForPin('kEnterPin').then(function (firstPin) {
+      if (!firstPin) {
         $scope.loginData.usePin = false;
+        return;
+      }
+
+      promptForPin('kReconfirmPin').then(function (secondPin) {
+        if (!secondPin) {
+          $scope.loginData.usePin = false;
+          return;
+        }
+
+        if (firstPin === secondPin) {
+          NVR.log('Pin code match');
+          $scope.loginData.pinCode = firstPin;
+        } else {
+          NVR.log('Pin code mismatch');
+          $scope.loginData.usePin = false;
+          NVR.displayBanner('error', [$translate.instant('kBannerPinMismatch')]);
+        }
       });
+    });
   } else {
     NVR.debug("Password disabled");
   }
+}
+
+function promptForPin(messageKey) {
+  var deferred = $q.defer();
+  var popupScope = $scope.$new(true);
+  popupScope.pinData = { value: '' };
+  popupScope.promptMessage = $translate.instant(messageKey);
+
+  var popup = $ionicPopup.show({
+    template: '<small>{{promptMessage}}</small><input type="password" ng-model="pinData.value">',
+    title: $translate.instant('kPinProtect'),
+    scope: popupScope,
+    buttons: [
+      {
+        text: $translate.instant('kButtonCancel'),
+        type: 'button-assertive',
+        onTap: function () {
+          return null;
+        }
+      },
+      {
+        text: $translate.instant('kButtonOk'),
+        type: 'button-positive',
+        onTap: function (e) {
+          if (!popupScope.pinData.value) {
+            e.preventDefault();
+          } else {
+            return popupScope.pinData.value;
+          }
+        }
+      }
+    ]
+  });
+
+  popup.then(function (result) {
+    deferred.resolve(result);
+    popupScope.$destroy();
+  });
+
+  return deferred.promise;
 }
 
 //-------------------------------------------------------------------------------

@@ -127,75 +127,10 @@ angular.module('zmApp.controllers').controller('zmApp.PortalLoginCtrl', ['$ionic
                   }
                 ]
             });
-        } else if ($ionicPlatform.is('android') && loginData.usePin) {
-
-          FingerprintAuth.isAvailable(function (result) {
-              NVR.debug("FingerprintAuth available: " + JSON.stringify(result));
-              if (result.isAvailable == true && result.hasEnrolledFingerprints == true) {
-                var encryptConfig = {
-                  clientId: "zmNinja",
-                  username: "doesntmatter",
-                  password: "doesntmatter",
-                  maxAttempts: 5,
-                  locale: "en_US",
-                  dialogTitle: $translate.instant('kPleaseAuthenticate'),
-                  dialogMessage: $translate.instant('kPleaseAuthenticate'),
-                  dialogHint: "",
-                }; // See config object for required parameters
-                FingerprintAuth.encrypt(encryptConfig, function (succ) {
-                  NVR.log("Touch success");
-                  unlock(true);
-                }, function (err) {
-                  NVR.log("Touch Failed " + JSON.stringify(msg));
-                });
-              } // if available                            
-            },
-            function (err) {
-              NVR.log("Fingerprint auth not available or not compatible with Android specs: " + JSON.stringify(err));
-            }
-
-          ); //isAvailable
-
-        } else if ($ionicPlatform.is('ios') && loginData.usePin) {
-
-          window.plugins.touchid.isAvailable(
-            function () {
-              window.plugins.touchid.verifyFingerprint(
-                $translate.instant('kPleaseAuthenticate'), // this will be shown in the native scanner popup
-                function (msg) {
-                  NVR.log("Touch success");
-                  unlock(true);
-                }, // success handler: fingerprint accepted
-                function (msg) {
-                  NVR.log("Touch Failed " + JSON.stringify(msg));
-                } // error handler with errorcode and localised reason
-              );
-            },
-            function (err) {});
-
-          /* $cordovaTouchID.checkSupport()
-               .then(function()
-               {
-                   // success, TouchID supported
-                   $cordovaTouchID.authenticate("")
-                       .then(function()
-                           {
-                               NVR.log("Touch Success");
-                               // Don't assign pin as it may be alphanum
-                               unlock(true);
-
-                           },
-                           function()
-                           {
-                               NVR.log("Touch Failed");
-                           });
-               }, function(error)
-               {
-                   NVR.log("TouchID not supported");
-               });*/
+        } else if (loginData.usePin && $rootScope.platformOS != 'desktop') {
+          tryBiometricUnlock();
         } else {
-          // touch was not used
-          NVR.log("not checking for touchID");
+          NVR.log("not checking for biometrics");
         }
 
         if (loginData.usePin ) {
@@ -249,6 +184,60 @@ angular.module('zmApp.controllers').controller('zmApp.PortalLoginCtrl', ['$ionic
       $scope.pindata.status = "";
     }
   };
+
+  function getNativeBiometricPlugin() {
+    if (!window.Capacitor) return null;
+    if (window.Capacitor.Plugins && window.Capacitor.Plugins.NativeBiometric) {
+      return window.Capacitor.Plugins.NativeBiometric;
+    }
+    if (window.Capacitor.NativeBiometric) {
+      return window.Capacitor.NativeBiometric;
+    }
+    if (window.NativeBiometric) {
+      return window.NativeBiometric;
+    }
+    return null;
+  }
+
+  function tryBiometricUnlock() {
+    var plugin = getNativeBiometricPlugin();
+    if (!plugin || typeof plugin.isAvailable !== 'function' || typeof plugin.verifyIdentity !== 'function') {
+      NVR.debug('NativeBiometric plugin not available, skipping');
+      return;
+    }
+
+    var reason = $translate.instant('kPleaseAuthenticate');
+
+    plugin.isAvailable({ useFallback: true })
+      .then(function (result) {
+        if (!result || result.isAvailable !== true) {
+          NVR.debug('Biometric authentication not available');
+          return false;
+        }
+        return plugin.verifyIdentity({
+          reason: reason,
+          title: reason,
+          subtitle: '',
+          description: '',
+          useFallback: true,
+          fallbackTitle: reason,
+        }).then(function () {
+          return true;
+        }).catch(function (err) {
+          NVR.log('Biometric verification failed: ' + JSON.stringify(err));
+          return false;
+        });
+      })
+      .then(function (verified) {
+        if (verified) {
+          NVR.log('Biometric authentication success');
+          unlock(true);
+        }
+      })
+      .catch(function (err) {
+        NVR.log('Biometric authentication error: ' + JSON.stringify(err));
+      });
+  }
 
   //-------------------------------------------------------------------------------
   // unlock app if PIN is correct
