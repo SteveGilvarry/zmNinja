@@ -1517,21 +1517,15 @@ $state.transitionTo('app.invalidapi');*/
         NVR.log("Applying default status bar appearance");
         NVR.applyDefaultStatusBarStyle();
 
-        if (window.cordova) {
-          // Replace with this Capacitor-compatible approach:
-          if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) {
-            window.Capacitor.Plugins.SplashScreen.hide();
-          } else {
-            console.log('Capacitor splash screen not available');
-          }
-          cordova.getAppVersion.getVersionNumber().then(function (version) {
-            NVR.log("App Version: " + version);
-            NVR.setAppVersion(version);
-          });
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.SplashScreen) {
+          window.Capacitor.Plugins.SplashScreen.hide();
         } else {
-          // custom header
-          $rootScope.appVersion = NVR.getAppVersion();
+          console.log('Capacitor splash screen not available');
         }
+
+        NVR.loadAppVersion().catch(function (err) {
+          NVR.log('App version lookup failed: ' + JSON.stringify(err));
+        });
 
         // At this stage, NVR.init is not called yet but I do need to know the language
         NVR.log("Retrieving language before init is called...");

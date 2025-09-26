@@ -1214,6 +1214,54 @@ angular.module('zmApp.controllers')
         }
       }
 
+      function getCapacitorAppPlugin() {
+        if (typeof window === 'undefined' || !window.Capacitor) {
+          return null;
+        }
+
+        if (window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+          return window.Capacitor.Plugins.App;
+        }
+
+        if (window.Capacitor.App) {
+          return window.Capacitor.App;
+        }
+
+        if (window.App) {
+          return window.App;
+        }
+
+        return null;
+      }
+
+      function updateAppVersion(ver) {
+        zmAppVersion = ver;
+        $rootScope.appVersion = ver;
+      }
+
+      function fetchAppVersion() {
+        var deferred = $q.defer();
+        var capacitorApp = getCapacitorAppPlugin();
+
+        if (capacitorApp && typeof capacitorApp.getInfo === 'function') {
+          capacitorApp.getInfo().then(function (info) {
+            var version = (info && info.version) ? info.version : zmAppVersion;
+            updateAppVersion(version);
+            log('App Version (Capacitor): ' + version);
+            deferred.resolve(version);
+          }).catch(function (err) {
+            log('App version fetch failed (Capacitor): ' + JSON.stringify(err));
+            updateAppVersion(zmAppVersion);
+            deferred.resolve(zmAppVersion);
+          });
+          return deferred.promise;
+        }
+
+        updateAppVersion(zmAppVersion);
+        deferred.resolve(zmAppVersion);
+        return deferred.promise;
+      }
+
       function reloadMonitorDisplayStatus() {
         debug("Loading hidden/unhidden status for profile:" + loginData.currentMontageProfile);
 
@@ -2580,8 +2628,7 @@ angular.module('zmApp.controllers')
         },
 
         setAppVersion: function (ver) {
-          zmAppVersion = ver;
-          $rootScope.appVersion = ver; // for custom header
+          updateAppVersion(ver);
 
           //console.log ('****** VER:'+$rootScope.appVersion);
         },
@@ -2592,6 +2639,10 @@ angular.module('zmApp.controllers')
 
         getAppVersion: function () {
           return (zmAppVersion);
+        },
+
+        loadAppVersion: function () {
+          return fetchAppVersion();
         },
 
         setBackground: function (val) {
