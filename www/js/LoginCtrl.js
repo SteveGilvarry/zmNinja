@@ -336,7 +336,7 @@ angular.module('zmApp.controllers').controller('zmApp.LoginCtrl', ['$scope', '$r
 
   //--------------------------------------------------------------------------
   // When PIN is enabled, this is called to specify a PIN
-  // FIXME: Get rid of cordovaPinDialog. It's really not needed 
+  // Legacy note: Cordova pin dialog was replaced with ionic popups
   //--------------------------------------------------------------------------
 
   $scope.pinPrompt = function (evt) {

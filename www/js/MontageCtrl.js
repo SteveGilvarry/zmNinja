@@ -1516,11 +1516,12 @@ angular.module('zmApp.controllers')
 
     $scope.$on('$ionicView.leave', function () {
       // console.log("**VIEW ** Montage Ctrl Left, force removing modal");
-      if ($rootScope.platformOS == 'android') {
-        NVR.debug("Deregistering handlers for multi-window");
-        window.MultiWindowPlugin.deregisterOnStop("montage-pause");
+      if (window.MultiWindowProxy) {
+        window.MultiWindowProxy.deregisterOnStop('montage-pause');
+        window.MultiWindowProxy.deregisterOnStart('montage-resume');
       } else {
-        document.removeEventListener("pause", onPause, false);
+        document.removeEventListener('pause', onPause, false);
+        document.removeEventListener('resume', onResume, false);
       }
 
       if ($scope.modal) $scope.modal.remove();
@@ -2439,13 +2440,13 @@ $scope.$on('$ionicView.afterEnter', function () {
   }, zm.packeryTimer);
   //console.log("**VIEW ** Montage Ctrl AFTER ENTER");
 
-  if ($rootScope.platformOS != 'android') {
-    document.addEventListener("pause", onPause, false);
+  if (window.MultiWindowProxy) {
+    window.MultiWindowProxy.registerOnStop('montage-pause', onPause);
+    window.MultiWindowProxy.registerOnStart('montage-resume', onResume);
   } else {
-    NVR.debug("MontageCtrl: Android detected, using cordova-multiwindow plugin for onStop/onStart instead");
-    window.MultiWindowPlugin.registerOnStop("montage-pause", onPause);
+    document.addEventListener('pause', onPause, false);
+    document.addEventListener('resume', onResume, false);
   }
-  document.addEventListener("resume", onResume, false);
 });
 
 $scope.clearAllEvents = function () {
@@ -2478,7 +2479,13 @@ $scope.eventButtonClicked = function (monitor, showEvents) {
 };
 
 $scope.$on('$ionicView.beforeLeave', function () {
-  document.removeEventListener("resume", onResume, false);
+  if (window.MultiWindowProxy) {
+    window.MultiWindowProxy.deregisterOnStart('montage-resume');
+    window.MultiWindowProxy.deregisterOnStop('montage-pause');
+  } else {
+    document.removeEventListener('pause', onPause, false);
+    document.removeEventListener('resume', onResume, false);
+  }
 
   // window.removeEventListener("resize", jiggleMontage, false);
   currentStreamState = streamState.STOPPED;

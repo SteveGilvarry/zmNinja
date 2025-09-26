@@ -9,7 +9,7 @@
 //--------------------------------------------------------------------------
 
 angular.module('zmApp.controllers')
-  .factory('EventServer', ['NVR', '$rootScope', '$websocket', '$ionicPopup', '$timeout', '$q', 'zm', '$ionicPlatform', '$cordovaMedia', '$translate', function (NVR, $rootScope, $websocket, $ionicPopup, $timeout, $q, zm, $ionicPlatform, $cordovaMedia, $translate) {
+  .factory('EventServer', ['NVR', '$rootScope', '$websocket', '$ionicPopup', '$timeout', '$q', 'zm', '$ionicPlatform', '$translate', function (NVR, $rootScope, $websocket, $ionicPopup, $timeout, $q, zm, $ionicPlatform, $translate) {
 
     var ws;
 
@@ -31,6 +31,71 @@ angular.module('zmApp.controllers')
     var connText = ['Pending Auth', 'Connected', 'Rejected'];
 
     var authState = connState.PENDING;
+    var mediaPlayer = null;
+    var htmlAudioPlayer = null;
+    var nativeAudioPlugin = null;
+    var nativeAudioPluginChecked = false;
+    var nativeAudioAssetId = 'zmAlarmSound';
+    var nativeAudioPreloaded = false;
+    var nativeAudioPluginWarningShown = false;
+
+    function createHtmlAudioPlayer(src) {
+      if (!src) {
+        return null;
+      }
+
+      try {
+        var audio = new Audio(src);
+        audio.load();
+        return {
+          play: function () {
+            try {
+              audio.currentTime = 0;
+              var promise = audio.play();
+              if (promise && typeof promise.catch === 'function') {
+                promise.catch(function (err) {
+                  NVR.debug('EventServer: HTML audio play failed: ' + JSON.stringify(err));
+                });
+              }
+            } catch (err) {
+              NVR.debug('EventServer: Exception playing HTML audio: ' + JSON.stringify(err));
+            }
+          }
+        };
+      } catch (err) {
+        NVR.debug('EventServer: Unable to create HTML audio player: ' + JSON.stringify(err));
+        return null;
+      }
+    }
+
+    function getNativeAudioPlugin() {
+      if (nativeAudioPluginChecked && !nativeAudioPlugin) {
+        return null;
+      }
+
+      if (nativeAudioPlugin) {
+        return nativeAudioPlugin;
+      }
+
+      if (typeof window === 'undefined') {
+        nativeAudioPluginChecked = true;
+        return null;
+      }
+
+      var plugin = null;
+
+      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.NativeAudio) {
+        plugin = window.Capacitor.Plugins.NativeAudio;
+      } else if (window.Capacitor && window.Capacitor.NativeAudio) {
+        plugin = window.Capacitor.NativeAudio;
+      } else if (window.NativeAudio) {
+        plugin = window.NativeAudio;
+      }
+
+      nativeAudioPlugin = plugin;
+      nativeAudioPluginChecked = true;
+      return nativeAudioPlugin;
+    }
 
     function getCapacitorWebsocketPlugin() {
       if (typeof window === 'undefined' || !window.Capacitor) {
@@ -625,8 +690,6 @@ angular.module('zmApp.controllers')
     function pushInit() {
       NVR.log("EventServer: Setting up push registration");
 
-      var mediasrc;
-      var media;
       var ld = NVR.getLogin();
       var plat = $rootScope.platformOS;
       var pushPlugin = (window.Capacitor && ((window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications) || window.Capacitor.PushNotifications)) ||
@@ -648,13 +711,49 @@ angular.module('zmApp.controllers')
       }
       pushInited = true;
 
-      mediasrc = plat == 'ios' ? 'sounds/blop.mp3' : '/android_asset/www/sounds/blop.mp3';
+      var mediaSrcRelative = 'sounds/blop.mp3';
+      var nativeAssetPath = 'public/sounds/blop.mp3';
+      htmlAudioPlayer = createHtmlAudioPlayer(mediaSrcRelative);
+      mediaPlayer = htmlAudioPlayer;
 
-      try {
-        media = $cordovaMedia.newMedia(mediasrc);
-      }
-      catch (err) {
-        NVR.debug('Media init error:' + JSON.stringify(err));
+      var nativeAudio = getNativeAudioPlugin();
+      if (nativeAudio && typeof nativeAudio.preload === 'function') {
+        if (!nativeAudioPreloaded) {
+          nativeAudio.preload({
+            assetId: nativeAudioAssetId,
+            assetPath: nativeAssetPath,
+            audioChannelNum: 1,
+            isUrl: false
+          }).then(function () {
+            nativeAudioPreloaded = true;
+            mediaPlayer = {
+              play: function () {
+                return nativeAudio.play({ assetId: nativeAudioAssetId }).catch(function (err) {
+                  NVR.debug('EventServer: NativeAudio play failed: ' + JSON.stringify(err));
+                });
+              }
+            };
+          }).catch(function (err) {
+            if (!nativeAudioPluginWarningShown) {
+              NVR.debug('EventServer: NativeAudio preload failed, using HTML audio fallback: ' + JSON.stringify(err));
+              nativeAudioPluginWarningShown = true;
+            }
+            mediaPlayer = htmlAudioPlayer;
+          });
+        } else {
+          mediaPlayer = {
+            play: function () {
+              return nativeAudio.play({ assetId: nativeAudioAssetId }).catch(function (err) {
+                NVR.debug('EventServer: NativeAudio play failed: ' + JSON.stringify(err));
+              });
+            }
+          };
+        }
+      } else {
+        if (!nativeAudioPluginWarningShown) {
+          NVR.debug('EventServer: NativeAudio plugin not available, using HTML audio fallback');
+          nativeAudioPluginWarningShown = true;
+        }
       }
 
       function registerTokenWithEventServer(tokenValue) {
@@ -785,10 +884,8 @@ angular.module('zmApp.controllers')
             $rootScope.tappedEid = 0;
             $rootScope.tappedMid = 0;
 
-            if (loginData.soundOnPush && media && media.play) {
-              media.play({
-                playAudioWhenScreenIsLocked: false
-              });
+            if (loginData.soundOnPush && mediaPlayer && typeof mediaPlayer.play === 'function') {
+              mediaPlayer.play();
             }
             if ($rootScope.alarmCount == '99') {
               $rootScope.alarmCount = '99+';

@@ -1,8 +1,8 @@
 /* jshint -W041 */
 /* jslint browser: true*/
-/* global saveAs, cordova,StatusBar,angular,console,moment */
+/* global saveAs, StatusBar, angular, console, moment */
 
-angular.module('zmApp.controllers').controller('zmApp.LogCtrl', ['$scope', '$rootScope', 'zm', '$ionicModal', 'NVR', '$ionicSideMenuDelegate', '$fileLogger', '$cordovaEmailComposer', '$ionicPopup', '$timeout', '$ionicHistory', '$state', '$interval', '$ionicLoading', '$translate', '$http', 'SecuredPopups', function ($scope, $rootScope, zm, $ionicModal, NVR, $ionicSideMenuDelegate, $fileLogger, $cordovaEmailComposer, $ionicPopup, $timeout, $ionicHistory, $state, $interval, $ionicLoading, $translate, $http, SecuredPopups) {
+angular.module('zmApp.controllers').controller('zmApp.LogCtrl', ['$scope', '$rootScope', 'zm', '$ionicModal', 'NVR', '$ionicSideMenuDelegate', '$fileLogger', '$ionicPopup', '$timeout', '$ionicHistory', '$state', '$interval', '$ionicLoading', '$translate', '$http', 'SecuredPopups', function ($scope, $rootScope, zm, $ionicModal, NVR, $ionicSideMenuDelegate, $fileLogger, $ionicPopup, $timeout, $ionicHistory, $state, $interval, $ionicLoading, $translate, $http, SecuredPopups) {
   $scope.openMenu = function () {
     $ionicSideMenuDelegate.toggleLeft();
   };
@@ -105,6 +105,17 @@ angular.module('zmApp.controllers').controller('zmApp.LogCtrl', ['$scope', '$roo
   // mobile - picks up applogs on the FS and sends an email with it
 
   $scope.attachLogs = function () {
+    var EmailComposer = window.Capacitor && window.Capacitor.Plugins ? window.Capacitor.Plugins.EmailComposer : null;
+    if (!EmailComposer) {
+      NVR.debug('EmailComposer plugin not available');
+      SecuredPopups.show('alert', {
+        title: $translate.instant('kError'),
+        template: $translate.instant('kEmailNotConfigured'),
+        okText: $translate.instant('kButtonOk')
+      });
+      return;
+    }
+
     var body = "zmNinja version:" + $scope.zmAppVersion +
       " (" + $rootScope.platformOS + ")<br/>" +
       "ZoneMinder version:" + NVR.getCurrentServerVersion() + "<br/>";
@@ -117,27 +128,27 @@ angular.module('zmApp.controllers').controller('zmApp.LogCtrl', ['$scope', '$roo
           throw new Error('Log path unavailable');
         }
         NVR.log("file location:" + fileWithPath);
+        return EmailComposer.isAvailable()
+          .then(function (available) {
+            if (!available) {
+              SecuredPopups.show('alert', {
+                title: $translate.instant('kError'),
+                template: $translate.instant('kEmailNotConfigured'),
+                okText: $translate.instant('kButtonOk')
+              });
+              return;
+            }
 
-        var onSuccess = function (result) {
-          NVR.log("Share completed? " + result.completed);
-          NVR.log("Shared to app: " + result.app);
-        };
-
-        var onError = function (msg) {
-          NVR.log("Sharing failed with message: " + msg);
-        };
-
-        window.plugins.socialsharing.shareViaEmail(
-          body, //body
-          'zmNinja Logs attached', // subject
-          [zm.authoremail], //to
-          null, // cc
-          null, //bcc
-          [fileWithPath],
-          onSuccess,
-          onError
-        );
-
+            return EmailComposer.compose({
+              to: [zm.authoremail],
+              subject: 'zmNinja Logs attached',
+              body: body,
+              isHtml: true,
+              attachments: [fileWithPath]
+            }).then(function () {
+              NVR.log('Email composer opened for log sharing');
+            });
+          });
       })
       .catch(function (e) {
         NVR.debug("Error attaching log file:" + JSON.stringify(e));

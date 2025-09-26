@@ -2,7 +2,7 @@
 /* jshint esversion: 6 */
 
 /* jslint browser: true*/
-/* global cordova,angular,console, URI, moment, localforage, CryptoJS, Connection, LZString */
+/* global cordova,angular,console, URI, moment, localforage, CryptoJS, LZString */
 
 // This is my central data respository and common functions
 // that many other controllers use
@@ -10,13 +10,19 @@
 
 angular.module('zmApp.controllers')
 
-  .service('NVR', ['$ionicPlatform', '$http', '$q', '$ionicLoading', '$ionicBackdrop', '$fileLogger', 'zm', '$rootScope', '$ionicContentBanner', '$timeout', '$cordovaPinDialog', '$ionicPopup', '$localstorage', '$state', '$translate', '$cordovaSQLite',
+  .service('NVR', ['$ionicPlatform', '$http', '$q', '$ionicLoading', '$ionicBackdrop', '$fileLogger', 'zm', '$rootScope', '$ionicContentBanner', '$timeout', '$ionicPopup', '$localstorage', '$state', '$translate',
     function ($ionicPlatform, $http, $q, $ionicLoading, $ionicBackdrop, $fileLogger,
-      zm, $rootScope, $ionicContentBanner, $timeout, $cordovaPinDialog,
-      $ionicPopup, $localstorage, $state, $translate, $cordovaSQLite ) {
+      zm, $rootScope, $ionicContentBanner, $timeout,
+      $ionicPopup, $localstorage, $state, $translate ) {
 
       var currentServerMultiPortSupported = false;
+      var currentConnectionType = 'unknown';
       var tokenExpiryTimer = null;
+      var keepAwakePlugin = null;
+      var keepAwakePluginChecked = false;
+      var keepAwakeSupported = null;
+      var keepAwakePluginWarningShown = false;
+      var keepAwakeUnsupportedWarningShown = false;
 
       /*
         DO NOT TOUCH zmAppVersion
@@ -394,10 +400,18 @@ angular.module('zmApp.controllers')
         }
         // else return real state
 
-        switch (navigator.connection.type) {
-          case Connection.WIFI:
-            return "highbw";
-          case Connection.ETHERNET:
+        var connectionType = currentConnectionType;
+
+        if ((!connectionType || connectionType === 'unknown') && typeof navigator !== 'undefined' && navigator.connection) {
+          connectionType = navigator.connection.type || navigator.connection.effectiveType || 'unknown';
+        }
+
+        connectionType = (connectionType || 'unknown').toString().toLowerCase();
+
+        switch (connectionType) {
+          case 'wifi':
+          case 'ethernet':
+          case 'wired':
             return "highbw";
           default:
             return "lowbw";
@@ -2093,6 +2107,34 @@ angular.module('zmApp.controllers')
       }
 
 
+      function getKeepAwakePlugin() {
+        if (keepAwakePluginChecked && keepAwakePlugin == null) {
+          return null;
+        }
+
+        if (keepAwakePlugin) {
+          return keepAwakePlugin;
+        }
+
+        if (typeof window === 'undefined') {
+          return null;
+        }
+
+        var plugin = null;
+
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.KeepAwake) {
+          plugin = window.Capacitor.Plugins.KeepAwake;
+        } else if (window.Capacitor && window.Capacitor.KeepAwake) {
+          plugin = window.Capacitor.KeepAwake;
+        } else if (window.KeepAwake) {
+          plugin = window.KeepAwake;
+        }
+
+        keepAwakePlugin = plugin;
+        keepAwakePluginChecked = true;
+        return keepAwakePlugin;
+      }
+
       return {
 
         clear_unsupported: function () {
@@ -2860,29 +2902,80 @@ angular.module('zmApp.controllers')
           return (loginData.use24hr ? "HH:mm:ss:sss" : "hh:mm:ss:sss a");
 
         },
+        setConnectionType: function (type) {
+          currentConnectionType = (type || 'unknown').toString().toLowerCase();
+        },
+
+        getConnectionType: function () {
+          return currentConnectionType;
+        },
+
         //------------------------------------------------------------------
         // switches screen to 'always on' or 'auto'
         //------------------------------------------------------------------
         setAwake: function (val) {
+          var plugin = getKeepAwakePlugin();
 
-          //console.log ("**** setAwake called with:" + val);
-          // log("Switching screen always on to " + val);
-          if (val) {
-
-            if (window.cordova != undefined) {
-              window.plugins.insomnia.keepAwake();
-            } else {
-              //console.log ("Skipping insomnia, cordova does not exist");
+          if (!plugin) {
+            if (!keepAwakePluginWarningShown) {
+              NVR.debug('setAwake: KeepAwake plugin not available, skipping');
+              keepAwakePluginWarningShown = true;
             }
-          } else {
-            if (window.cordova != undefined) {
-              window.plugins.insomnia.allowSleepAgain();
-            } else {
-              //console.log ("Skipping insomnia, cordova does not exist");
-            }
-
+            return;
           }
 
+          if (keepAwakeSupported === false) {
+            if (!keepAwakeUnsupportedWarningShown) {
+              NVR.debug('setAwake: KeepAwake not supported on this platform');
+              keepAwakeUnsupportedWarningShown = true;
+            }
+            return;
+          }
+
+          var action = val ? 'keepAwake' : 'allowSleep';
+
+          if (typeof plugin[action] !== 'function') {
+            NVR.debug('setAwake: KeepAwake plugin missing method ' + action);
+            return;
+          }
+
+          var ensureSupport;
+
+          if (keepAwakeSupported === null && typeof plugin.isSupported === 'function') {
+            ensureSupport = plugin.isSupported().then(function (result) {
+              keepAwakeSupported = result && result.isSupported !== false;
+              if (!keepAwakeSupported && !keepAwakeUnsupportedWarningShown) {
+                NVR.debug('setAwake: KeepAwake reported as unsupported');
+                keepAwakeUnsupportedWarningShown = true;
+              }
+              return keepAwakeSupported;
+            }).catch(function (err) {
+              keepAwakeSupported = false;
+              if (!keepAwakeUnsupportedWarningShown) {
+                NVR.debug('setAwake: Error determining KeepAwake support: ' + JSON.stringify(err));
+                keepAwakeUnsupportedWarningShown = true;
+              }
+              return false;
+            });
+          } else {
+            if (keepAwakeSupported === null) {
+              keepAwakeSupported = true;
+            }
+            ensureSupport = Promise.resolve(keepAwakeSupported !== false);
+          }
+
+          ensureSupport.then(function (supported) {
+            if (!supported) {
+              return;
+            }
+
+            plugin[action]().then(function () {
+              keepAwakeSupported = true;
+            }).catch(function (err) {
+              NVR.debug('setAwake: KeepAwake.' + action + ' failed: ' + JSON.stringify(err));
+              keepAwakeUnsupportedWarningShown = true;
+            });
+          });
         },
 
         //--------------------------------------------------------------------------
@@ -4153,31 +4246,15 @@ angular.module('zmApp.controllers')
 
           });
 
-          if ($rootScope.platformOS == 'ios') {
-            order = [window.cordovaSQLiteDriver._driver,
-              localforage.INDEXEDDB,
-              localforage.LOCALSTORAGE
-            ];
-          } else {
-            // don't do SQL for Android
-            // large keys hang on some devices
-            // see https://github.com/litehelpers/Cordova-sqlite-storage/issues/533
-            order = [
-              localforage.INDEXEDDB,
-              localforage.LOCALSTORAGE,
-            ];
-          }
+          order = [
+            localforage.INDEXEDDB,
+            localforage.LOCALSTORAGE
+          ];
 
           debug("configureStorageDB: trying order:" + JSON.stringify(order));
 
-          localforage.defineDriver(window.cordovaSQLiteDriver).then(function () {
-              return localforage.setDriver(
-                // Try setting cordovaSQLiteDriver if available,
-                // for desktops, it will pick the next one
-                order
-              );
-            })
-            .then(function (succ) {
+          localforage.setDriver(order)
+            .then(function () {
               log("configureStorageDB:localforage driver for storage:" + localforage.driver());
               debug("configureStorageDB:Making sure this storage driver works...");
               return localforage.setItem('testPromiseKey', 'testPromiseValue');

@@ -1,6 +1,6 @@
 /* jshint -W041, -W093 */
 /* jslint browser: true*/
-/* global angular,console,alert, moment ,ionic, URI,Packery, ConnectSDK, CryptoJS, ContactFindOptions, localforage,$, Connection, MobileAccessibility, hello */
+/* global angular,console,alert, moment ,ionic, URI,Packery, ConnectSDK, CryptoJS, ContactFindOptions, localforage,$, MobileAccessibility, hello */
 
 // core app start stuff
 angular.module('zmApp', [
@@ -1009,6 +1009,9 @@ angular.module('zmApp', [
 
       NVR.log("You are running on " + $rootScope.platformOS);
 
+      var networkPlugin = null;
+      var networkStatusListener = null;
+
       function getCapacitorPushPlugin() {
         if (typeof window === 'undefined' || !window.Capacitor) {
           return null;
@@ -1027,6 +1030,49 @@ angular.module('zmApp', [
         }
 
         return null;
+      }
+
+      function getCapacitorAppPlugin() {
+        if (typeof window === 'undefined' || !window.Capacitor) {
+          return null;
+        }
+
+        if (window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+          return window.Capacitor.Plugins.App;
+        }
+
+        if (window.Capacitor.App) {
+          return window.Capacitor.App;
+        }
+
+        if (window.App) {
+          return window.App;
+        }
+
+        return null;
+      }
+
+      function getCapacitorNetworkPlugin() {
+        if (networkPlugin) {
+          return networkPlugin;
+        }
+
+        if (typeof window === 'undefined' || !window.Capacitor) {
+          networkPlugin = null;
+          return networkPlugin;
+        }
+
+        if (window.Capacitor.Plugins && window.Capacitor.Plugins.Network) {
+          networkPlugin = window.Capacitor.Plugins.Network;
+        } else if (window.Capacitor.Network) {
+          networkPlugin = window.Capacitor.Network;
+        } else if (window.Network) {
+          networkPlugin = window.Network;
+        } else {
+          networkPlugin = null;
+        }
+
+        return networkPlugin;
       }
 
       if ($rootScope.platformOS == 'android') {
@@ -1062,6 +1108,8 @@ angular.module('zmApp', [
       $rootScope.tappedEid = 0;
       //var eventsToDisplay=[];
       $rootScope.alarmCount = "0";
+
+      var appUrlListenerRegistered = false;
 
       $rootScope.currentServerGroup = "defaultServer";
       $rootScope.validMonitorId = "";
@@ -1237,6 +1285,141 @@ NVR.log("Not registering D-PAD handler, as you are not on android");
         }
       }
 
+      function updateConnectionType(type) {
+        var normalized = (type || 'unknown').toString().toLowerCase();
+        NVR.setConnectionType(normalized);
+        $timeout(function () {
+          $rootScope.connectionType = normalized;
+        });
+      }
+
+      function initializeNetworkMonitoring() {
+        var plugin = getCapacitorNetworkPlugin();
+        if (!plugin) {
+          updateConnectionType(navigator.onLine ? 'wifi' : 'none');
+          return;
+        }
+
+        networkPlugin = plugin;
+
+        if (typeof plugin.getStatus === 'function') {
+          plugin.getStatus().then(function (status) {
+            if (status && typeof status.connectionType !== 'undefined') {
+              updateConnectionType(status.connectionType);
+            }
+            if (typeof status.connected === 'boolean') {
+              $rootScope.online = status.connected;
+              if (status.connected) {
+                onOnline(status);
+              } else {
+                onOffline(status);
+              }
+            }
+          }).catch(function (err) {
+            NVR.debug('Network: getStatus failed: ' + JSON.stringify(err));
+          });
+        }
+
+        if (typeof plugin.addListener === 'function' && !networkStatusListener) {
+          networkStatusListener = plugin.addListener('networkStatusChange', function (status) {
+            if (status && typeof status.connectionType !== 'undefined') {
+              updateConnectionType(status.connectionType);
+            }
+            if (status && status.connected === false) {
+              onOffline(status);
+            } else {
+              onOnline(status);
+            }
+          });
+        }
+      }
+
+      var lifecycleHandlers = {
+        pause: {},
+        resume: {}
+      };
+
+      var lifecycleInitialized = false;
+
+      function registerLifecycleHandler(type, id, handler) {
+        if (!id || typeof handler !== 'function') {
+          return;
+        }
+        lifecycleHandlers[type][id] = handler;
+      }
+
+      function deregisterLifecycleHandler(type, id) {
+        if (!id) {
+          return;
+        }
+        delete lifecycleHandlers[type][id];
+      }
+
+      function invokeLifecycleHandlers(type) {
+        var handlers = lifecycleHandlers[type];
+        Object.keys(handlers).forEach(function (key) {
+          try {
+            handlers[key]();
+          } catch (err) {
+            NVR.debug('Lifecycle ' + type + ' handler (' + key + ') error: ' + JSON.stringify(err));
+          }
+        });
+      }
+
+      function ensureLifecycleInitialization() {
+        if (lifecycleInitialized) {
+          return;
+        }
+        lifecycleInitialized = true;
+
+        if (typeof document !== 'undefined') {
+          document.addEventListener('pause', function () {
+            invokeLifecycleHandlers('pause');
+          }, false);
+
+          document.addEventListener('resume', function () {
+            invokeLifecycleHandlers('resume');
+          }, false);
+        }
+
+        var appPlugin = getCapacitorAppPlugin();
+        if (appPlugin && typeof appPlugin.addListener === 'function') {
+          appPlugin.addListener('appStateChange', function (state) {
+            if (!state) {
+              return;
+            }
+            if (state.isActive) {
+              invokeLifecycleHandlers('resume');
+            } else {
+              invokeLifecycleHandlers('pause');
+            }
+          });
+        }
+      }
+
+      ensureLifecycleInitialization();
+
+      if (typeof window !== 'undefined') {
+        window.MultiWindowProxy = {
+          registerOnStop: function (id, handler) {
+            registerLifecycleHandler('pause', id, handler);
+          },
+          registerOnStart: function (id, handler) {
+            registerLifecycleHandler('resume', id, handler);
+          },
+          deregisterOnStop: function (id) {
+            deregisterLifecycleHandler('pause', id);
+          },
+          deregisterOnStart: function (id) {
+            deregisterLifecycleHandler('resume', id);
+          }
+        };
+
+        if (!window.MultiWindowPlugin) {
+          window.MultiWindowPlugin = window.MultiWindowProxy;
+        }
+      }
+
       // credit: https://blog.alexmaccaw.com/javascript-wake-event
       function detectWake() {
         var TIMEOUT = 10000;
@@ -1259,39 +1442,65 @@ NVR.log("Not registering D-PAD handler, as you are not on android");
         }, TIMEOUT);
       }
 
-      function onOffline() {
+      function onOffline(status) {
         $timeout(function () {
+          if (status && typeof status.connectionType !== 'undefined') {
+            updateConnectionType(status.connectionType || 'none');
+          } else {
+            updateConnectionType('none');
+          }
           $rootScope.online = false;
           NVR.log("************** Your network went offline");
         });
       }
 
-      function onOnline() {
+      function onOnline(status) {
         $timeout(function () {
-          if ($rootScope.online == true) {
-            NVR.log ("**** network online, but looks like it was not offline, not doing anything");
-            return;
-          }
-          NVR.log("************ Your network came back online");
+          var plugin = getCapacitorNetworkPlugin();
+          var statusPromise;
 
-          $rootScope.online = true;
-          var networkState = "browser not supported";
-          if (navigator.connection) networkState = navigator.connection.type;
-          NVR.debug("Detected network type as: " + networkState);
-          var strState = NVR.getBandwidth();
-          NVR.debug("getBandwidth() normalized it as: " + strState);
-          $rootScope.runMode = strState;
-          if ((NVR.getLogin().autoSwitchBandwidth == true) &&
-            (NVR.getLogin().enableLowBandwidth == true)) {
-            NVR.debug("Setting app state to: " + strState);
-            $rootScope.$broadcast('bandwidth-change', strState);
+          if (status && typeof status === 'object' && typeof status.connectionType !== 'undefined') {
+            statusPromise = Promise.resolve(status);
+          } else if (plugin && typeof plugin.getStatus === 'function') {
+            statusPromise = plugin.getStatus();
           } else {
-            NVR.debug("Not changing bandwidth state, as auto change is not on");
+            var fallbackType = (navigator.connection && navigator.connection.type) ? navigator.connection.type : (navigator.onLine ? 'wifi' : 'unknown');
+            statusPromise = Promise.resolve({ connected: true, connectionType: fallbackType });
           }
-          NVR.log("Your network is online, re-authenticating");
-          zmAutoLogin.doLoginNoLogout($translate.instant('kReAuthenticating'));
+
+          statusPromise.then(function (netStatus) {
+            var connectionType = (netStatus && netStatus.connectionType) ? netStatus.connectionType : 'unknown';
+            updateConnectionType(connectionType);
+
+            var strState = NVR.getBandwidth();
+            NVR.debug("Detected network type as: " + connectionType);
+            NVR.debug("getBandwidth() normalized it as: " + strState);
+            $rootScope.runMode = strState;
+
+            var wasOnline = $rootScope.online === true;
+            $rootScope.online = true;
+
+            if ((NVR.getLogin().autoSwitchBandwidth == true) &&
+              (NVR.getLogin().enableLowBandwidth == true)) {
+              NVR.debug("Setting app state to: " + strState);
+              $rootScope.$broadcast('bandwidth-change', strState);
+            } else {
+              NVR.debug("Not changing bandwidth state, as auto change is not on");
+            }
+
+            if (!wasOnline) {
+              NVR.log("Your network is online, re-authenticating");
+              zmAutoLogin.doLoginNoLogout($translate.instant('kReAuthenticating'));
+            } else {
+              NVR.debug('Network already marked online; updated connection state');
+            }
+          }).catch(function (err) {
+            NVR.debug('Network: error retrieving status during onOnline: ' + JSON.stringify(err));
+          });
         });
       }
+
+      initializeNetworkMonitoring();
 
       // This code takes care of trapping the Android back button
       // and takes it to the menu.
@@ -1423,6 +1632,65 @@ $state.transitionTo('app.invalidapi');*/
         return "";
       }
 
+      function handleDeepLink(url) {
+        if (!url) {
+          return;
+        }
+
+        $rootScope.tappedNotification = 2; // 1 is push
+        $rootScope.tappedMid = 0;
+
+        var parsed;
+        try {
+          parsed = URI.parse(url);
+        } catch (parseErr) {
+          NVR.debug('Failed to parse deep link URL: ' + JSON.stringify(parseErr));
+          return;
+        }
+
+        if (parsed && parsed.query) {
+          var qm = getQueryVariable(parsed.query, "mid");
+          var qe = getQueryVariable(parsed.query, "eid");
+          if (qe) $rootScope.tappedEid = parseInt(qe);
+          if (qm) $rootScope.tappedMid = parseInt(qm);
+          NVR.log("external URL called with MID=" + $rootScope.tappedMid + " and/or EID=" + $rootScope.tappedEid);
+        }
+      }
+
+      function registerAppUrlOpenListener() {
+        if (appUrlListenerRegistered) {
+          return;
+        }
+
+        var appPlugin = getCapacitorAppPlugin();
+        if (!appPlugin || typeof appPlugin.addListener !== 'function') {
+          NVR.debug('Capacitor App plugin not available, cannot register deep link listener');
+          return;
+        }
+
+        try {
+          appPlugin.addListener('appUrlOpen', function (data) {
+            if (data && data.url) {
+              handleDeepLink(data.url);
+            }
+          });
+        } catch (err) {
+          NVR.debug('Error attaching appUrlOpen listener: ' + JSON.stringify(err));
+        }
+
+        if (typeof appPlugin.getLaunchUrl === 'function') {
+          appPlugin.getLaunchUrl().then(function (result) {
+            if (result && result.url) {
+              handleDeepLink(result.url);
+            }
+          }).catch(function (err) {
+            NVR.debug('Error retrieving launch URL: ' + JSON.stringify(err));
+          });
+        }
+
+        appUrlListenerRegistered = true;
+      }
+
       //---------------------------------------------------------------------
       // called when device is ready
       //---------------------------------------------------------------------
@@ -1433,18 +1701,9 @@ $state.transitionTo('app.invalidapi');*/
       }
 
       // handles URL launches
-      window.handleOpenURL = function (url) {
-        $rootScope.tappedNotification = 2; // 1 is push
-        $rootScope.tappedMid = 0;
-        var c = URI.parse(url);
-        if (c.query) {
-          var qm = getQueryVariable(c.query, "mid");
-          var qe = getQueryVariable(c.query, "eid");
-          if (qe) $rootScope.tappedEid = parseInt(qe);
-          if (qm) $rootScope.tappedMid = parseInt(qm);
-          NVR.log("external URL called with MID=" + $rootScope.tappedMid + " and/or EID=" + $rootScope.tappedEid);
-        }
-      };
+      window.handleOpenURL = handleDeepLink;
+
+      registerAppUrlOpenListener();
 
       NVR.configureStorageDB()
         .then(function () {
@@ -1452,8 +1711,6 @@ $state.transitionTo('app.invalidapi');*/
           return NVR.cloudSync();
         })
         .then(function () {
-          // this should alert "cordovaSQLiteDriver" when in an emulator or a device
-
           // Now lets import old data if it exists:
           NVR.log("Cloudsync operation complete, continuing...");
           var defaultServerName = $localstorage.get("defaultServerName");
@@ -1623,18 +1880,12 @@ $state.transitionTo('app.invalidapi');*/
       function setupPauseAndResume() {
         NVR.log("Setting up pause and resume handler AFTER language is loaded...");
 
-        if ($rootScope.platformOS != 'android') {
-          document.addEventListener("resume", function () {
-            resumeHandler();
-          }, false);
-
-          document.addEventListener("pause", function () {
-            pauseHandler();
-          }, false);
+        if (window.MultiWindowProxy) {
+          window.MultiWindowProxy.registerOnStop('app-pause', pauseHandler);
+          window.MultiWindowProxy.registerOnStart('app-resume', resumeHandler);
         } else {
-          NVR.debug("Android detected, using cordova-multiwindow plugin for onStop/onStart instead");
-          window.MultiWindowPlugin.registerOnStop("app-pause", pauseHandler);
-          window.MultiWindowPlugin.registerOnStart("app-resume", resumeHandler);
+          document.addEventListener('pause', pauseHandler, false);
+          document.addEventListener('resume', resumeHandler, false);
         }
 
         function resumeHandler() {
