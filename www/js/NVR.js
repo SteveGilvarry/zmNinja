@@ -240,39 +240,88 @@ angular.module('zmApp.controllers')
         'ZM_MIN_STREAMING_PORT': '-1'
       };
 
+      var httpDefaults = {
+        headers: {},
+        trustMode: 'default'
+      };
+
       /**
        * Allows/Disallows self signed certs
        *
        * @returns
        */
       function setCordovaHttpOptions() {
-        /*debug ("Cordova HTTP: Setting JSON serializer");
-        cordova.plugin.http.setDataSerializer('utf8');*/
+        configureHttpClient();
+      }
+
+      function configureHttpClient() {
+        var plugin = getCapacitorHttp();
+
+        httpDefaults.headers = {};
+
+        var cid;
+        if (loginData.zmNinjaCustomId) {
+          cid = loginData.zmNinjaCustomId.replace('%APPVER%', zmAppVersion);
+          httpDefaults.headers['X-ZmNinja'] = cid;
+        }
+
         if (loginData.isUseBasicAuth) {
-          debug("Cordova HTTP: configuring basic auth");
-          cordova.plugin.http.useBasicAuth(loginData.basicAuthUser, loginData.basicAuthPassword);
-        }
-        var cid = loginData.zmNinjaCustomId.replace('%APPVER%',zmAppVersion);
-        debug("Setting cordova header X-ZmNinja to "+cid);
-        // setup custom header
-        cordova.plugin.http.setHeader('*', 'X-ZmNinja', cid);
-
-        if (!loginData.enableStrictSSL) {
-          //alert("Enabling insecure SSL");
-          log(">>>> Disabling strict SSL checking (turn off  in Dev Options if you can't connect)");
-          cordova.plugin.http.setServerTrustMode('nocheck', function () {
-            debug('--> SSL is permissive, will allow any certs. Use at your own risk.');
-          }, function () {
-            NVR.log('-->Error setting SSL permissive');
-          });
-
-          if ($rootScope.platformOS == 'android') {
-            log(">>> Android: enabling inline image view for self signed certs");
-            cordova.plugins.certificates.trustUnsecureCerts(true);
+          var authHeader = $rootScope.basicAuthHeader;
+          if (!authHeader && loginData.basicAuthUser !== undefined) {
+            try {
+              authHeader = 'Basic ' + btoa((loginData.basicAuthUser || '') + ':' + (loginData.basicAuthPassword || ''));
+            } catch (authErr) {
+              debug('configureHttpClient: error creating basic auth header: ' + JSON.stringify(authErr));
+            }
           }
-        } else {
-          log(">>>> Enabling strict SSL checking (turn off  in Dev Options if you can't connect)");
+          if (authHeader) {
+            httpDefaults.headers.Authorization = authHeader;
+          }
         }
+
+        httpDefaults.trustMode = loginData.enableStrictSSL ? 'default' : 'nocheck';
+
+        if (plugin && typeof plugin.setServerTrustMode === 'function') {
+          plugin.setServerTrustMode({
+            mode: httpDefaults.trustMode
+          }).catch(function (err) {
+            debug('CapacitorHttp: setServerTrustMode error: ' + JSON.stringify(err));
+          });
+        } else {
+          debug('CapacitorHttp plugin not available; using default browser networking configuration');
+        }
+
+        $rootScope.httpDefaults = angular.copy(httpDefaults);
+      }
+
+      function getCapacitorHttp() {
+        if (typeof window === 'undefined') {
+          return null;
+        }
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp) {
+          return window.Capacitor.Plugins.CapacitorHttp;
+        }
+        if (window.Capacitor && window.Capacitor.Http) {
+          return window.Capacitor.Http;
+        }
+        if (typeof window.CapacitorHttp !== 'undefined') {
+          return window.CapacitorHttp;
+        }
+        return null;
+      }
+
+      function clearHttpCookies(url) {
+        var plugin = getCapacitorHttp();
+        if (plugin && typeof plugin.clearCookies === 'function') {
+          return plugin.clearCookies(url ? {
+            url: url
+          } : {}).catch(function (err) {
+            debug('CapacitorHttp: clearCookies error: ' + JSON.stringify(err));
+          });
+        }
+
+        debug('CapacitorHttp: clearCookies unavailable; skipping');
+        return $q.when();
       }
 
       /**
@@ -1929,6 +1978,22 @@ angular.module('zmApp.controllers')
           return decrypt(data);
         },
 
+        configureHttpClient: function () {
+          return configureHttpClient();
+        },
+
+        clearHttpCookies: function (url) {
+          return clearHttpCookies(url);
+        },
+
+        getCapacitorHttp: function () {
+          return getCapacitorHttp();
+        },
+
+        getHttpDefaults: function () {
+          return angular.copy(httpDefaults);
+        },
+
         insertSpecialTokens: function () {
 
           var tokens = '';
@@ -2391,7 +2456,7 @@ angular.module('zmApp.controllers')
                 }
 
                 // from local forage
-                if (window.cordova) setCordovaHttpOptions();
+                setCordovaHttpOptions();
                 $rootScope.LoginData = loginData;
                 $rootScope.$broadcast('init-complete');
               });

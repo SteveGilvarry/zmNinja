@@ -143,6 +143,7 @@ angular.module('zmApp.controllers').controller('zmApp.DevOptionsCtrl', ['$scope'
 
     NVR.debug("SaveDevOptions: Saving to disk");
     NVR.setLogin($scope.loginData);
+    NVR.configureHttpClient();
 
     //console.log ($scope.loginData);
     NVR.getMonitors(1);

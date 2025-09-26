@@ -656,27 +656,11 @@ $scope.portalKeypress = function (evt) {
     $rootScope.authSession = '';
 
     if ($rootScope.platformOS != 'desktop') {
-      if ($scope.loginData.isUseBasicAuth) {
-        NVR.debug("Cordova HTTP: configuring basic auth");
-        cordova.plugin.http.useBasicAuth($scope.loginData.basicAuthUser, $scope.loginData.basicAuthPassword);
+      if (window.cordova) {
+        NVR.clearHttpCookies();
       }
 
-      if (!$scope.loginData.enableStrictSSL) {
-        //alert("Enabling insecure SSL");
-        NVR.log(">>>> Disabling strict SSL checking (turn off in Dev Options if you can't connect)");
-        cordova.plugin.http.setServerTrustMode('nocheck', function () {
-          NVR.debug('--> SSL is permissive, will allow any certs. Use at your own risk.');
-        }, function () {
-          NVR.log('-->Error setting SSL permissive');
-        });
-
-        if ($rootScope.platformOS == 'android') {
-          NVR.log (">>> Android: enabling inline image view for self signed certs");
-          cordova.plugins.certificates.trustUnsecureCerts(true);
-        }
-      } else {
-        NVR.log(">>>> Enabling strict SSL checking (turn off in Dev Options if you can't connect)");
-      }
+      NVR.configureHttpClient();
 
       if ($scope.loginData.saveToCloud) {
         NVR.debug("writing data to cloud");

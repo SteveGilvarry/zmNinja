@@ -370,7 +370,7 @@ angular.module('zmApp.controllers')
       var onProgress = options.onProgress;
       var fetchOptions = options.fetchOptions || {};
 
-      var Http = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp) ||
+      var Http = (window.Capacitor && ((window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp) || window.Capacitor.Http)) ||
         window.CapacitorHttp;
 
       if (Http && typeof Http.get === 'function') {

@@ -17,19 +17,7 @@ angular.module('zmApp.controllers').controller('zmApp.FirstUseCtrl', ['$scope', 
     // this is for first starts
 
     // 
-    if (window.cordova) {
-      cordova.plugin.http.setServerTrustMode('nocheck', function () {
-        NVR.debug('--> First use -> SSL is permissive, will allow any certs for now. You can change it later.');
-      }, function () {
-        NVR.log('-->First Use -> Error setting SSL permissive');
-      });
-
-      if ($rootScope.platformOS == 'android') {
-        NVR.log (">>> Android: enabling inline image view for self signed certs");
-        cordova.plugins.certificates.trustUnsecureCerts(true);
-      }
-
-    }
+    NVR.configureHttpClient();
 
 
   });

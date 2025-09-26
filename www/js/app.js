@@ -596,24 +596,37 @@ angular.module('zmApp', [
   .factory('timeoutHttpIntercept', ['$rootScope', '$q', 'zm', '$injector', function ($rootScope, $q, zm, $injector) {
     $rootScope.zmCookie = "";
 
+    function getNvrSafe() {
+      try {
+        return $injector.get('NVR');
+      } catch (err) {
+        if (window.console && console.debug) {
+          console.debug('timeoutHttpIntercept: unable to get NVR - ' + (err && err.message ? err.message : err));
+        }
+        return null;
+      }
+    }
+
     return {
       request: function (config) {
         if (!config) return config;
         if (!config.url) return config;
-        nvr = $injector.get('NVR');
+        var nvrInstance = getNvrSafe();
         if ($rootScope.basicAuthHeader) {
           config.headers.Authorization = $rootScope.basicAuthHeader;
         }
 
-        var chdr = nvr.getCustomHeader();
-        if (chdr) {
-          config.headers['X-ZmNinja'] = chdr;
+        if (nvrInstance && typeof nvrInstance.getCustomHeader === 'function') {
+          var chdr = nvrInstance.getCustomHeader();
+          if (chdr) {
+            config.headers['X-ZmNinja'] = chdr;
+          }
         }
         return config || $q.when(config);
       },
 
       responseError: function (rejection) {
-        nvr = $injector.get('NVR');
+        var nvrInstance = getNvrSafe();
         if (rejection.status == 401 && !rejection.config.skipIntercept) {
           if (rejection && rejection.data && rejection.data.data) {
             console.log ("MESSAGE:"+rejection.data.data.message);
@@ -623,26 +636,38 @@ angular.module('zmApp', [
             }
           }
 
-          nvr.log("Browser Http intecepted 401, will try reauth");
-          return nvr.proceedWithLogin({'nobroadcast':true, 'access':false, 'refresh':true}).then (function(succ) {
-            nvr.log ("Interception proceedWithLogin completed, retrying old request with skipIntercept = true");
+          if (!nvrInstance || typeof nvrInstance.proceedWithLogin !== 'function') {
+            return $q.reject(rejection);
+          }
+
+          if (nvrInstance.log) {
+            nvrInstance.log("Browser Http intecepted 401, will try reauth");
+          }
+          return nvrInstance.proceedWithLogin({'nobroadcast':true, 'access':false, 'refresh':true}).then (function(succ) {
+            if (nvrInstance.log) {
+              nvrInstance.log ("Interception proceedWithLogin completed, retrying old request with skipIntercept = true");
+            }
             // console.log ("OLD URL-"+rejection.config.url );
             rejection.config.url = rejection.config.url.replace(/&token=([^&]*)/, $rootScope.authSession);
             rejection.config.skipIntercept = true;
             //  console.log ("NEW URL-"+rejection.config.url );
             return $injector.get('$http')(rejection.config);
           }, function (err) {
-            nvr.log("Interception proceedWithLogin failed, NOT retrying old request");
+            if (nvrInstance.log) {
+              nvrInstance.log("Interception proceedWithLogin failed, NOT retrying old request");
+            }
             return $q.reject(err);
           });
         } else {
-          if (rejection.config.skipIntercept) nvr.log ("Not intercepting as skipIntercept true");
+          if (rejection.config.skipIntercept && nvrInstance && nvrInstance.log) {
+            nvrInstance.log ("Not intercepting as skipIntercept true");
+          }
           return $q.reject(rejection);
         }
       },
 
       response: function (response) {
-        nvr = $injector.get('NVR');
+        var nvrInstance = getNvrSafe();
         var cookies = response.headers("Set-Cookie");
         if (cookies != null) {
           var zmSess = cookies.match("ZMSESSID=(.*?);");
@@ -655,7 +680,9 @@ angular.module('zmApp', [
         }
 
         if (response.data && typeof(response.data) == 'string' && (response.data.indexOf("<pre class=\"cake-error\">")==0)) {
-          nvr.log ("cake error detected, attempting fix...");
+          if (nvrInstance && nvrInstance.log) {
+            nvrInstance.log ("cake error detected, attempting fix...");
+          }
           response.data = JSON.parse(response.data.replace(/<pre class=\"cake-error\">[\s\S]*<\/pre>/,''));
         }
         return response || $q.when(response);
@@ -837,11 +864,7 @@ angular.module('zmApp', [
     function _doLogoutAndLogin(str) {
       NVR.debug("_doLogoutAndLogin: Clearing cookies");
 
-      if (window.cordova) {
-        // we need to do this or ZM will send same auth hash
-        // this was fixed in a PR dated Oct 18
-        cordova.plugin.http.clearCookies();
-      }
+      NVR.clearHttpCookies();
 
       $rootScope.userCancelledAuth = false;
       return NVR.getReachableConfig(false).then (
@@ -1723,106 +1746,224 @@ $state.transitionTo('app.invalidapi');*/
       $provide.decorator('$http', ['$delegate', '$q', '$injector', function ($delegate, $q, $injector) {
         // create function which overrides $http function
         var $http = $delegate;
-        var nvr = $injector.get("$rootScope");
+        var $rootScope = $injector.get('$rootScope');
 
         var wrapper = function () {
-          var url = arguments[0].url;
-          var method = arguments[0].method;
+          var originalConfig = arguments[0] || {};
+          var defaults = getHttpDefaults();
+          var config = angular.extend({}, originalConfig);
+          var url = config.url;
           var isOutgoingRequest = /^(http|https):\/\//.test(url);
-          if (window.cordova && isOutgoingRequest) {
-            var d = $q.defer();
-            var skipIntercept = arguments[0].skipIntercept || false;
-            var dataPayload = {};
-            if (arguments[0].data !== undefined) {
-              dataPayload = arguments[0].data;
+
+          if (isOutgoingRequest) {
+            var capacitorPromise = sendWithCapacitorHttp(config, defaults);
+            if (capacitorPromise) {
+              return capacitorPromise;
             }
-
-            var options = {
-              method: method,
-              data: dataPayload,
-              headers: arguments[0].headers,
-              // timeout: arguments[0].timeout,
-              responseType: arguments[0].responseType,
-              skipIntercept:skipIntercept
-            };
-
-            if (arguments[0].timeout) options.timeout = arguments[0].timeout;
-            if (!nvr.getLogin().httpCordovaNoEncode) {
-              url = encodeURI(url);
-            }
-            cordova.plugin.http.sendRequest(url, options,
-              function (succ) {
-                // automatic JSON parse if no responseType: text
-                // fall back to text if JSON parse fails too
-
-                // work around for cake-error leak
-
-                // console.log ("HTTP RESPONSE:" + JSON.stringify(succ.data));
-                if (succ.data && (succ.data.indexOf("<pre class=\"cake-error\">") == 0) ) {
-                  nvr.debug ("**** Native: cake-error in message, trying fix...");
-                  succ.data = JSON.parse(succ.data.replace(/<pre class=\"cake-error\">[\s\S]*<\/pre>/,''));
-                }
-
-                if (options.responseType == 'text') {
-                  // don't parse into JSON
-                  d.resolve({
-                    "data": succ.data
-                  });
-                  return d.promise;
-                } else {
-                  try {
-                    d.resolve({
-                      "data": JSON.parse(succ.data)
-                    });
-                    return d.promise;
-                  } catch (e) {
-                    d.resolve({
-                      "data": succ.data
-                    });
-                    return d.promise;
-                  }
-                }
-              },
-              function (err) {
-                nvr.debug("***  Inside native HTTP error for url:"+JSON.stringify(err));
-                if (err.status == 401 && !options.skipIntercept && nvr.apiValid) {
-                  if (err.error && err.error.indexOf("API is disabled for user") != -1) {
-                    nvr.apiValid = false;
-                    nvr.debug ("Setting API to "+nvr.apiValid);
-                    d.reject(err);
-                    return d.promise;
-                  }
-                  nvr.debug ("** Native intercept: Got 401, going to try logging in");
-                  return nvr.proceedWithLogin({'nobroadcast':true, 'access':false, 'refresh':true})
-                    .then (function(succ) {
-                      nvr.debug("** Native, tokens generated, retrying old request with skipIntercept = true");
-                      url = url.replace(/&token=([^&]*)/, nvr.authSession);
-                      options.skipIntercept = true;
-                      cordova.plugin.http.sendRequest(url, options,
-                        function (succ) {
-                          d.resolve(succ);
-                          return d.promise;
-                        },
-                        function (err) {
-                          d.reject(err);
-                          return d.promise;
-                        });
-                      return d.promise;
-                    }, function (err) {d.reject(err); return d.promise;});
-                } else {
-                  if (options.skipIntercept) {
-                    nvr.debug ("Not intercepting as skipIntercept is true");
-                  }
-                  // not a 401, so pass on rejection
-                  d.reject(err);
-                  return d.promise;
-                }
-              });
-            return d.promise;
-          } else { // not cordova, so lets go back to default http
-            return $http.apply($http, arguments);
           }
+
+          var fallbackHeaders = mergeHeaders(defaults.headers, config.headers);
+          var fallbackConfig = angular.extend({}, config, { headers: fallbackHeaders });
+          return $http(fallbackConfig);
         };
+
+        function getLoginData() {
+          return $rootScope.LoginData || {};
+        }
+
+        function getHttpDefaults() {
+          return $rootScope.httpDefaults || { headers: {}, trustMode: 'default' };
+        }
+
+        function getNvrSafe() {
+          if (!$injector.has('NVR')) {
+            return null;
+          }
+          try {
+            return $injector.get('NVR');
+          } catch (err) {
+            if (window.console && console.debug) {
+              console.debug('getNvrSafe: unable to retrieve NVR due to ' + (err && err.message ? err.message : err));
+            }
+            return null;
+          }
+        }
+
+        function debugLog(msg) {
+          var nvrInstance = getNvrSafe();
+          if (nvrInstance && typeof nvrInstance.debug === 'function') {
+            nvrInstance.debug(msg);
+            return;
+          }
+          if (window.console && console.debug) {
+            console.debug(msg);
+          }
+        }
+
+        function mergeHeaders(base, extra) {
+          var headers = {};
+          angular.extend(headers, base || {});
+          angular.extend(headers, extra || {});
+          return headers;
+        }
+
+        function parseResponseData(rawData, responseType) {
+          var data = rawData;
+
+          if (typeof data === 'string') {
+            if (data.indexOf('<pre class="cake-error">') === 0) {
+              try {
+                data = JSON.parse(data.replace(/<pre class=\"cake-error\">[\s\S]*<\/pre>/, ''));
+              } catch (cakeErr) {
+                // keep original string if parsing fails
+              }
+            } else if (responseType !== 'text' && responseType !== 'arraybuffer' && responseType !== 'blob') {
+              try {
+                data = JSON.parse(data);
+              } catch (jsonErr) {
+                // ignore parse failure and return raw string
+              }
+            }
+          }
+
+          return data;
+        }
+
+        function buildAngularResponse(config, resp) {
+          return {
+            data: parseResponseData(resp.data, config.responseType),
+            status: resp.status,
+            headers: function () {
+              return resp.headers || {};
+            },
+            config: config
+          };
+        }
+
+        function sendWithCapacitorHttp(config, defaults) {
+          var plugin = (function () {
+            if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorHttp) return window.Capacitor.Plugins.CapacitorHttp;
+            if (window.Capacitor && window.Capacitor.Http) return window.Capacitor.Http;
+            if (typeof window.CapacitorHttp !== 'undefined') return window.CapacitorHttp;
+            return null;
+          })();
+          if (!plugin || typeof plugin.request !== 'function') {
+            return null;
+          }
+
+          var d = $q.defer();
+          var skipIntercept = config.skipIntercept || false;
+          var login = getLoginData();
+          var requestUrl = config.url;
+          if (!login.httpCordovaNoEncode) {
+            try {
+              requestUrl = encodeURI(requestUrl);
+            } catch (encodeErr) {
+              debugLog('Error encoding URL: ' + JSON.stringify(encodeErr));
+            }
+          }
+
+          var headers = mergeHeaders(defaults.headers, config.headers);
+          var dataPayload = config.data !== undefined ? config.data : {};
+          var paramsPayload = config.params !== undefined ? config.params : undefined;
+
+          var requestConfig = {
+            url: requestUrl,
+            method: config.method,
+            headers: headers,
+            data: dataPayload
+          };
+
+          var methodUpper = (config.method || '').toUpperCase();
+          if (methodUpper === 'GET' || methodUpper === 'HEAD' || methodUpper === 'OPTIONS') {
+            delete requestConfig.data;
+          }
+
+          if (paramsPayload !== undefined) {
+            requestConfig.params = paramsPayload;
+          }
+
+          if (config.timeout) {
+            requestConfig.readTimeout = config.timeout;
+          }
+
+          if (config.responseType === 'arraybuffer') {
+            requestConfig.responseType = 'arraybuffer';
+          } else if (config.responseType === 'text') {
+            requestConfig.responseType = 'text';
+          } else if (config.responseType === 'blob') {
+            requestConfig.responseType = 'blob';
+          } else {
+            requestConfig.responseType = 'json';
+          }
+
+          plugin.request(requestConfig).then(function (resp) {
+            var angularResp = buildAngularResponse(config, resp);
+            if (resp.status >= 200 && resp.status < 300) {
+              d.resolve(angularResp);
+            } else {
+              handleCapacitorError(angularResp);
+            }
+          }).catch(function (error) {
+            var errResp = error && typeof error.status !== 'undefined' ? buildAngularResponse(config, error) : error;
+            handleCapacitorError(errResp);
+          });
+
+          function handleCapacitorError(err) {
+            if (!err) {
+              d.reject(err);
+              return;
+            }
+
+            var status = err.status;
+            if (status == 401 && !skipIntercept && $rootScope.apiValid !== false) {
+              var errBody = err.data;
+              if (errBody && errBody.indexOf && errBody.indexOf('API is disabled for user') !== -1) {
+                $rootScope.apiValid = false;
+                d.reject(err);
+                return;
+              }
+
+              debugLog('** Native intercept: Got 401, going to try logging in');
+              var nvrInstance = getNvrSafe();
+              if (!nvrInstance || !nvrInstance.proceedWithLogin) {
+                d.reject(err);
+                return;
+              }
+              nvrInstance.proceedWithLogin({
+                nobroadcast: true,
+                access: false,
+                refresh: true
+              }).then(function () {
+                var retryConfig = angular.extend({}, config, {
+                  skipIntercept: true
+                });
+                if (retryConfig.url) {
+                  retryConfig.url = retryConfig.url.replace(/&token=([^&]*)/, $rootScope.authSession);
+                }
+                var retryPromise = sendWithCapacitorHttp(retryConfig, defaults);
+                if (retryPromise) {
+                  retryPromise.then(function (res) {
+                    d.resolve(res);
+                  }, function (retryErr) {
+                    d.reject(retryErr);
+                  });
+                } else {
+                  d.reject(err);
+                }
+              }, function (loginErr) {
+                d.reject(loginErr);
+              });
+            } else {
+              if (skipIntercept) {
+                debugLog('Not intercepting as skipIntercept is true');
+              }
+              d.reject(err);
+            }
+          }
+
+          return d.promise;
+        }
 
         // wrap around all HTTP methods
         Object.keys($http).filter(function (key) {
