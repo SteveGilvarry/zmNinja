@@ -1,6 +1,6 @@
 /* jshint -W041 */
 /* jslint browser: true*/
-/* global cordova,StatusBar,angular,console, Masonry */
+/* global StatusBar,angular,console, Masonry */
 
 angular.module('zmApp.controllers').controller('zmApp.HelpCtrl', ['$scope', '$rootScope', '$ionicModal', 'NVR', '$ionicSideMenuDelegate', '$ionicHistory', '$state', '$translate', '$q', '$templateRequest', '$sce', '$compile', function ($scope, $rootScope, $ionicModal, NVR, $ionicSideMenuDelegate, $ionicHistory, $state, $translate, $q, $templateRequest, $sce, $compile) {
   $scope.openMenu = function () {
@@ -61,20 +61,42 @@ angular.module('zmApp.controllers').controller('zmApp.HelpCtrl', ['$scope', '$ro
 
   }
 
-  $scope.launchUrl = function (url) {
-
-    options = {
-    };
-    //console.log ('got '+url);
-    if ($rootScope.platformOS == 'desktop' ) {
-      window.open(url, '_blank', options);
-    } else {
-      cordova.InAppBrowser.open(url, '_blank', 'location=no');
-      
-     // cordova.InAppBrowser.open(url, '_blank', options);
+  function getCapacitorBrowserPlugin() {
+    if (typeof window === 'undefined' || !window.Capacitor) {
+      return null;
     }
-    return false;
 
+    if (window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
+      return window.Capacitor.Plugins.Browser;
+    }
+
+    if (window.Capacitor.Browser) {
+      return window.Capacitor.Browser;
+    }
+
+    return null;
+  }
+
+  $scope.launchUrl = function (url) {
+    if (!url) {
+      return false;
+    }
+
+    var browser = getCapacitorBrowserPlugin();
+    if (browser && typeof browser.open === 'function') {
+      browser.open({
+        url: url,
+        presentationStyle: 'fullscreen'
+      }).catch(function (err) {
+        NVR.log('Capacitor Browser open failed: ' + JSON.stringify(err));
+        window.open(url, '_blank');
+      });
+    } else {
+      NVR.log('Capacitor Browser not available, falling back to window.open');
+      window.open(url, '_blank');
+    }
+
+    return false;
   };
 
   //-------------------------------------------------------------------------

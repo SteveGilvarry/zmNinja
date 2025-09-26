@@ -704,26 +704,30 @@ $scope.portalKeypress = function (evt) {
         serverGroupList[$scope.loginData.serverName] = angular.copy($scope.loginData);
 
         var ct = NVR.encrypt(serverGroupList);
-        window.cordova.plugin.cloudsettings.save({
-            'serverGroupList': ct,
-            'defaultServerName': $scope.loginData.serverName
-          },
-          function () {
+        NVR.saveCloudSettings({
+          serverGroupList: ct,
+          defaultServerName: $scope.loginData.serverName
+        }).then(function (saved) {
+          if (saved) {
             NVR.debug("local data synced with cloud...");
-          },
-          function (err) {
-            NVR.debug("error syncing cloud data..." + JSON.stringify(err));
-          }, true);
+          } else {
+            NVR.debug("cloud settings plugin not available, skipping sync");
+          }
+        }).catch(function (err) {
+          NVR.debug("error syncing cloud data..." + JSON.stringify(err));
+        });
 
       } else {
         NVR.debug("Clearing cloud settings...");
-        window.cordova.plugin.cloudsettings.save({},
-          function () {
+        NVR.clearCloudSettings().then(function (cleared) {
+          if (cleared) {
             NVR.debug("cloud data cleared");
-          },
-          function (err) {
-            NVR.debug("error clearing cloud data: " + err);
-          }, true);
+          } else {
+            NVR.debug("cloud settings plugin not available, nothing to clear");
+          }
+        }).catch(function (err) {
+          NVR.debug("error clearing cloud data: " + JSON.stringify(err));
+        });
       }
     }
 

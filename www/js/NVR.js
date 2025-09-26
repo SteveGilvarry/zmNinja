@@ -1262,6 +1262,111 @@ angular.module('zmApp.controllers')
         return deferred.promise;
       }
 
+      var CLOUD_SETTINGS_KEY = 'zmNinjaCloudSettings';
+
+      function getPreferencesPlugin() {
+        if (typeof window === 'undefined' || !window.Capacitor) {
+          return null;
+        }
+
+        if (window.Capacitor.Plugins && window.Capacitor.Plugins.Preferences) {
+          return window.Capacitor.Plugins.Preferences;
+        }
+
+        if (window.Capacitor.Preferences) {
+          return window.Capacitor.Preferences;
+        }
+
+        if (window.Preferences) {
+          return window.Preferences;
+        }
+
+        return null;
+      }
+
+      function cloudSettingsPluginAvailable() {
+        return !!getPreferencesPlugin();
+      }
+
+      function saveCloudSettingsData(data) {
+        var plugin = getPreferencesPlugin();
+        if (!plugin || typeof plugin.set !== 'function') {
+          log('Cloud settings plugin not available, skipping save');
+          return $q.resolve(false);
+        }
+
+        var payload = data || {};
+        var value;
+        try {
+          value = JSON.stringify(payload);
+        } catch (err) {
+          log('Failed to serialise cloud settings: ' + JSON.stringify(err));
+          return $q.reject(err);
+        }
+
+        return $q.when(plugin.set({
+          key: CLOUD_SETTINGS_KEY,
+          value: value
+        })).then(function () {
+          return true;
+        });
+      }
+
+      function clearCloudSettingsData() {
+        var plugin = getPreferencesPlugin();
+        if (!plugin) {
+          log('Cloud settings plugin not available, skipping clear');
+          return $q.resolve(false);
+        }
+
+        if (typeof plugin.remove === 'function') {
+          return $q.when(plugin.remove({
+            key: CLOUD_SETTINGS_KEY
+          })).then(function () {
+            return true;
+          });
+        }
+
+        return saveCloudSettingsData({});
+      }
+
+      function loadCloudSettingsData() {
+        var plugin = getPreferencesPlugin();
+        if (!plugin || typeof plugin.get !== 'function') {
+          log('Cloud settings plugin not available, skipping load');
+          return $q.resolve(null);
+        }
+
+        return $q.when(plugin.get({
+          key: CLOUD_SETTINGS_KEY
+        })).then(function (result) {
+          if (!result || !result.value) {
+            return null;
+          }
+
+          try {
+            return JSON.parse(result.value);
+          } catch (err) {
+            log('Failed to parse cloud settings JSON: ' + JSON.stringify(err));
+            return null;
+          }
+        });
+      }
+
+      function cloudSettingsExists() {
+        var plugin = getPreferencesPlugin();
+        if (!plugin || typeof plugin.get !== 'function') {
+          log('Cloud settings plugin not available, skipping exists check');
+          return $q.resolve(false);
+        }
+
+        return $q.when(plugin.get({
+          key: CLOUD_SETTINGS_KEY
+        })).then(function (result) {
+          return !!(result && result.value);
+        });
+      }
+
       function reloadMonitorDisplayStatus() {
         debug("Loading hidden/unhidden status for profile:" + loginData.currentMontageProfile);
 
@@ -2336,15 +2441,11 @@ angular.module('zmApp.controllers')
 
         cloudSync: function () {
           var d = $q.defer();
-          if (!window.cordova) {
-            log("Cloud settings plugin not found, skipping cloud sync...");
+          if (!cloudSettingsPluginAvailable()) {
+            log("Cloud settings plugin not available, skipping cloud sync...");
             d.resolve(true);
             return d.promise;
           }
-
-          /*   window.cordova.plugin.cloudsettings.enableDebug(function(){
-               console.log("Debug mode enabled");
-           });*/
 
           log("CloudSync: Syncing with cloud if enabled...");
 
@@ -2380,65 +2481,71 @@ angular.module('zmApp.controllers')
                   }
                 }
                 log("Found valid local configuration, overwriting cloud settings...");
-                //console.log (">>>>>>>>>>>>>>SAVING: " + sgl + dsn);
-                window.cordova.plugin.cloudsettings.save({
-                    'serverGroupList': sgl,
-                    'defaultServerName': dsn
-                  },
-                  function () {
-                    log("local data synced with cloud...");
-                    d.resolve(true);
-                    return d.promise;
-                  },
-                  function (err) {
-                    log("error syncing cloud data..." + err);
-                    d.resolve(true);
-                    return d.promise;
-                  }, true);
 
-              }
-              // bad or missing local config
-              else {
+                saveCloudSettingsData({
+                  serverGroupList: sgl,
+                  defaultServerName: dsn
+                }).then(function () {
+                  log("local data synced with cloud...");
+                  d.resolve(true);
+                  return d.promise;
+                }).catch(function (err) {
+                  log("error syncing cloud data..." + JSON.stringify(err));
+                  d.resolve(true);
+                  return d.promise;
+                });
+
+              } else {
                 log("Did not find a valid local configuration, trying cloud...");
 
-                window.cordova.plugin.cloudsettings.exists(function (exists) {
+                cloudSettingsExists().then(function (exists) {
 
-                  if (exists) {
-                    log("A cloud configuration has been found");
-                    window.cordova.plugin.cloudsettings.load(function (cloudData) {
-                      //console.log("CLOUD DATA FOUND" + JSON.stringify(cloudData));
-                      // debug("Cloud data retrieved is:" + JSON.stringify(cloudData));
-                      if (cloudData && cloudData.defaultServerName && cloudData.serverGroupList) {
-                        log("retrieved a valid cloud config with a defaultServerName of:" + cloudData.defaultServerName);
-                        log("replacing local DB with cloud...");
-                        localforage.setItem('isFirstUse', false)
-                          .then(function () {
-                            log("cleared first use");
-                            return localforage.setItem("defaultServerName", cloudData.defaultServerName);
-                          })
-                          .then(function () {
-                            log("saved defaultServerName");
-                            return localforage.setItem("serverGroupList", cloudData.serverGroupList);
-                          })
-                          .then(function () {
-                            log("saved serverGroupList, returning from cloudSync()");
-                            d.resolve(true);
-                            return d.promise;
-                          });
-                      } else {
-                        // cloud did not have (useable)data
-                        log("Did not find a valid cloud config");
-                        d.resolve(true);
-                        return d.promise;
-                      }
-                    });
-                  } else {
+                  if (!exists) {
                     log("Cloud data does not exist");
                     d.resolve(true);
                     return d.promise;
                   }
+
+                  log("A cloud configuration has been found");
+                  loadCloudSettingsData().then(function (cloudData) {
+                    if (cloudData && cloudData.defaultServerName && cloudData.serverGroupList) {
+                      log("retrieved a valid cloud config with a defaultServerName of:" + cloudData.defaultServerName);
+                      log("replacing local DB with cloud...");
+                      localforage.setItem('isFirstUse', false)
+                        .then(function () {
+                          log("cleared first use");
+                          return localforage.setItem("defaultServerName", cloudData.defaultServerName);
+                        })
+                        .then(function () {
+                          log("saved defaultServerName");
+                          return localforage.setItem("serverGroupList", cloudData.serverGroupList);
+                        })
+                        .then(function () {
+                          log("saved serverGroupList, returning from cloudSync()");
+                          d.resolve(true);
+                          return d.promise;
+                        });
+                    } else {
+                      log("Did not find a valid cloud config");
+                      d.resolve(true);
+                      return d.promise;
+                    }
+                  }).catch(function (err) {
+                    log("Error loading cloud data: " + JSON.stringify(err));
+                    d.resolve(true);
+                    return d.promise;
+                  });
+                }).catch(function (err) {
+                  log("Error checking for cloud data: " + JSON.stringify(err));
+                  d.resolve(true);
+                  return d.promise;
                 });
               }
+            })
+            .catch(function (err) {
+              log("Cloud sync encountered an error: " + JSON.stringify(err));
+              d.resolve(true);
+              return d.promise;
             });
           return d.promise;
         },
@@ -2643,6 +2750,26 @@ angular.module('zmApp.controllers')
 
         loadAppVersion: function () {
           return fetchAppVersion();
+        },
+
+        saveCloudSettings: function (data) {
+          return saveCloudSettingsData(data);
+        },
+
+        clearCloudSettings: function () {
+          return clearCloudSettingsData();
+        },
+
+        hasCloudSettingsPlugin: function () {
+          return cloudSettingsPluginAvailable();
+        },
+
+        loadCloudSettings: function () {
+          return loadCloudSettingsData();
+        },
+
+        cloudSettingsExists: function () {
+          return cloudSettingsExists();
         },
 
         setBackground: function (val) {

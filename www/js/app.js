@@ -1,6 +1,6 @@
 /* jshint -W041, -W093 */
 /* jslint browser: true*/
-/* global cordova,angular,console,alert, moment ,ionic, URI,Packery, ConnectSDK, CryptoJS, ContactFindOptions, localforage,$, Connection, MobileAccessibility, hello */
+/* global angular,console,alert, moment ,ionic, URI,Packery, ConnectSDK, CryptoJS, ContactFindOptions, localforage,$, Connection, MobileAccessibility, hello */
 
 // core app start stuff
 angular.module('zmApp', [
@@ -1009,22 +1009,41 @@ angular.module('zmApp', [
 
       NVR.log("You are running on " + $rootScope.platformOS);
 
+      function getCapacitorPushPlugin() {
+        if (typeof window === 'undefined' || !window.Capacitor) {
+          return null;
+        }
+
+        if (window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications) {
+          return window.Capacitor.Plugins.PushNotifications;
+        }
+
+        if (window.Capacitor.PushNotifications) {
+          return window.Capacitor.PushNotifications;
+        }
+
+        if (window.PushNotifications) {
+          return window.PushNotifications;
+        }
+
+        return null;
+      }
+
       if ($rootScope.platformOS == 'android') {
-        var permissions = cordova.plugins.permissions;
-        permissions.checkPermission(permissions.POST_NOTIFICATIONS, function(status) {
-          if (!status.checkPermission) {
-            NVR.log("No permission to post notifications");
-          }
-          permissions.requestPermission(permissions.POST_NOTIFICATIONS, succ, err);
-        }, null);
-      }
-
-      function succ(s) {
-        NVR.log("Got permission to post notifications");
-      }
-
-      function err(e) {
-        NVR.log("Error in requestPermission");
+        var pushPlugin = getCapacitorPushPlugin();
+        if (pushPlugin && typeof pushPlugin.requestPermissions === 'function') {
+          pushPlugin.requestPermissions().then(function (status) {
+            if (status && status.receive === 'granted') {
+              NVR.log('Push notification permission granted');
+            } else {
+              NVR.log('Push notification permission not granted: ' + JSON.stringify(status));
+            }
+          }).catch(function (error) {
+            NVR.log('Error requesting push notification permission: ' + JSON.stringify(error));
+          });
+        } else {
+          NVR.log('PushNotifications plugin not available; skipping permission request');
+        }
       }
 
       $rootScope.appName = "zmNinja";
