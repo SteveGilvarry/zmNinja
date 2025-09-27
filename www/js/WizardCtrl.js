@@ -494,7 +494,14 @@ angular.module('zmApp.controllers').controller('zmApp.WizardCtrl', ['$scope', '$
 
         var succ;
         try {
-          succ = JSON.parse(textsucc.data);
+          var raw = textsucc && textsucc.data !== undefined ? textsucc.data : textsucc;
+          if (typeof raw === 'string') {
+            succ = JSON.parse(raw);
+          } else if (raw && typeof raw === 'object') {
+            succ = raw;
+          } else {
+            throw new Error('Unexpected login response type');
+          }
 
           if (!succ.version) {
             NVR.debug("API login returned fake success, going back to webscrape");

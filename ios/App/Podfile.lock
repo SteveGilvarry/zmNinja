@@ -39,13 +39,9 @@ PODS:
     - Capacitor
   - IONFilesystemLib (1.0.1)
   - IONFileTransferLib (1.0.1)
-  - MiazCapacitorWebsocket (0.6.0):
-    - Capacitor
-    - Starscream (~> 4.0.0)
   - SDWebImage (5.21.2):
     - SDWebImage/Core (= 5.21.2)
   - SDWebImage/Core (5.21.2)
-  - Starscream (4.0.8)
 
 DEPENDENCIES:
   - "Capacitor (from `../../node_modules/@capacitor/ios`)"
@@ -66,14 +62,12 @@ DEPENDENCIES:
   - "CapacitorSplashScreen (from `../../node_modules/@capacitor/splash-screen`)"
   - "CapacitorStatusBar (from `../../node_modules/@capacitor/status-bar`)"
   - "CapgoCapacitorNativeBiometric (from `../../node_modules/@capgo/capacitor-native-biometric`)"
-  - "MiazCapacitorWebsocket (from `../../node_modules/@miaz/capacitor-websocket`)"
 
 SPEC REPOS:
   trunk:
     - IONFilesystemLib
     - IONFileTransferLib
     - SDWebImage
-    - Starscream
 
 EXTERNAL SOURCES:
   Capacitor:
@@ -112,8 +106,6 @@ EXTERNAL SOURCES:
     :path: "../../node_modules/@capacitor/status-bar"
   CapgoCapacitorNativeBiometric:
     :path: "../../node_modules/@capgo/capacitor-native-biometric"
-  MiazCapacitorWebsocket:
-    :path: "../../node_modules/@miaz/capacitor-websocket"
 
 SPEC CHECKSUMS:
   Capacitor: 28d6c01026a9a3f7156529498ec1f389a2a28dbc
@@ -136,10 +128,8 @@ SPEC CHECKSUMS:
   CapgoCapacitorNativeBiometric: be4ceeff38739d9c0f59b8c41456a3b01cfeddf0
   IONFilesystemLib: 89258b8e3e85465da93127d25d7ce37f977e8a6f
   IONFileTransferLib: b268561ab0ba7f386eea228c4986b55ba0146ca9
-  MiazCapacitorWebsocket: 732de4c7eb82bc12607a64a200b4b20b89c93f5d
   SDWebImage: 9f177d83116802728e122410fb25ad88f5c7608a
-  Starscream: 19b5533ddb925208db698f0ac508a100b884a1b9
 
-PODFILE CHECKSUM: 802346548e1105aeea5f644b0f9e0207078ee121
+PODFILE CHECKSUM: ab85d8166a8013688ff13d573df32b5e2d49a705
 
 COCOAPODS: 1.16.2

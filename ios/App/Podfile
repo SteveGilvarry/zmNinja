@@ -26,7 +26,6 @@ def capacitor_pods
   pod 'CapacitorSplashScreen', :path => '../../node_modules/@capacitor/splash-screen'
   pod 'CapacitorStatusBar', :path => '../../node_modules/@capacitor/status-bar'
   pod 'CapgoCapacitorNativeBiometric', :path => '../../node_modules/@capgo/capacitor-native-biometric'
-  pod 'MiazCapacitorWebsocket', :path => '../../node_modules/@miaz/capacitor-websocket'
   pod 'CapacitorEmailComposer', :path => '../../node_modules/capacitor-email-composer'
 end
 

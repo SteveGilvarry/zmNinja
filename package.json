@@ -35,7 +35,6 @@
     "@capacitor/splash-screen": "^7.0.3",
     "@capacitor/status-bar": "^7.0.3",
     "@capgo/capacitor-native-biometric": "^7.1.13",
-    "@miaz/capacitor-websocket": "^0.6.0",
     "async": "^3.2.6",
     "capacitor-email-composer": "^7.0.2",
     "deep-equal": "^2.2.3",

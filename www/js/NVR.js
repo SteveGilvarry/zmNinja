@@ -850,7 +850,14 @@ angular.module('zmApp.controllers')
               $ionicLoading.hide();
               var succ;
               try {
-                succ = JSON.parse(textsucc.data);
+                var raw = textsucc && textsucc.data !== undefined ? textsucc.data : textsucc;
+                if (typeof raw === 'string') {
+                  succ = JSON.parse(raw);
+                } else if (raw && typeof raw === 'object') {
+                  succ = raw;
+                } else {
+                  throw new Error('Unexpected login response type');
+                }
 
                 if (!succ.version) {
                   debug("API login returned fake success, going back to webscrape");
@@ -3788,8 +3795,14 @@ angular.module('zmApp.controllers')
 
                 var succ;
                 try {
-                  //console.log(textsucc);
-                  succ = JSON.parse(textsucc.data);
+                  var raw = textsucc && textsucc.data !== undefined ? textsucc.data : textsucc;
+                  if (typeof raw === 'string') {
+                    succ = JSON.parse(raw);
+                  } else if (raw && typeof raw === 'object') {
+                    succ = raw;
+                  } else {
+                    throw new Error('Unexpected response type');
+                  }
                   if (succ.data) succ = succ.data;
                   if (succ.config) {
                     if (succ.config.Value == '1') {

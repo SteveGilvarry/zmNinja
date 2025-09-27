@@ -12,14 +12,8 @@ angular.module('zmApp.controllers')
   .factory('EventServer', ['NVR', '$rootScope', '$websocket', '$ionicPopup', '$timeout', '$q', 'zm', '$ionicPlatform', '$translate', function (NVR, $rootScope, $websocket, $ionicPopup, $timeout, $q, zm, $ionicPlatform, $translate) {
 
     var ws;
-
-    var localNotificationId = 0;
     var pushInited = false;
     var isTimerOn = false;
-    var mobileSocketName = 'zmEventServer';
-    var mobileSocketConnected = false;
-    var mobileSocketPluginHandles = [];
-    var capacitorWebsocketPlugin = null;
     var iClosed = false;
     var isSocketReady = false;
     var pendingMessages = [];
@@ -97,71 +91,16 @@ angular.module('zmApp.controllers')
       return nativeAudioPlugin;
     }
 
-    function getCapacitorWebsocketPlugin() {
-      if (typeof window === 'undefined' || !window.Capacitor) {
-        return null;
-      }
-
-      if (window.Capacitor.Plugins && window.Capacitor.Plugins.CapacitorWebsocket) {
-        return window.Capacitor.Plugins.CapacitorWebsocket;
-      }
-
-      if (window.Capacitor.CapacitorWebsocket) {
-        return window.Capacitor.CapacitorWebsocket;
-      }
-
-      if (window.CapacitorWebsocket) {
-        return window.CapacitorWebsocket;
-      }
-
-      return null;
-    }
-
-    function clearMobileSocketListeners() {
-      while (mobileSocketPluginHandles.length) {
-        var handle = mobileSocketPluginHandles.pop();
-        if (handle && typeof handle.remove === 'function') {
-          try {
-            handle.remove();
-          } catch (err) {
-            NVR.debug('EventServer: Error removing websocket listener: ' + JSON.stringify(err));
-          }
-        }
-      }
-      mobileSocketConnected = false;
-    }
-
-    function addMobileListener(eventName, callback) {
-      if (!capacitorWebsocketPlugin || typeof capacitorWebsocketPlugin.addListener !== 'function') {
-        return;
-      }
-
-      try {
-        var handle = capacitorWebsocketPlugin.addListener(eventName, callback);
-        if (handle && typeof handle.then === 'function') {
-          handle.then(function (resolvedHandle) {
-            if (resolvedHandle) {
-              mobileSocketPluginHandles.push(resolvedHandle);
-            }
-          }).catch(function (err) {
-            NVR.debug('EventServer: Failed to attach listener ' + eventName + ': ' + JSON.stringify(err));
-          });
-        } else if (handle) {
-          mobileSocketPluginHandles.push(handle);
-        }
-      } catch (err) {
-        NVR.debug('EventServer: Exception while registering listener ' + eventName + ': ' + JSON.stringify(err));
-      }
-    }
-
     //--------------------------------------------------------------------------
     // called when the websocket is opened
     //--------------------------------------------------------------------------
     function handleOpen(data) {
       isSocketReady = true;
-      NVR.debug("EventServer: WebSocket open called with:" + JSON.stringify(data));
-      if ($rootScope.platformOS != 'desktop') {
-        mobileSocketConnected = true;
+      var logData = data && data.type ? { type: data.type } : data;
+      try {
+        NVR.debug("EventServer: WebSocket open called with:" + JSON.stringify(logData));
+      } catch (err) {
+        NVR.debug('EventServer: WebSocket open event could not be stringified');
       }
       var loginData = NVR.getLogin();
       NVR.log("EventServer: openHandshake: Websocket open, sending Auth");
@@ -198,9 +137,6 @@ angular.module('zmApp.controllers')
       isSocketReady = false;
       pendingMessages = [];
       authState = connState.PENDING;
-      if ($rootScope.platformOS != 'desktop') {
-        mobileSocketConnected = false;
-      }
 
       if (iClosed) {
         NVR.debug("EventServer: App closed socket, not reconnecting");
@@ -226,9 +162,6 @@ angular.module('zmApp.controllers')
       isSocketReady = false;
       pendingMessages = [];
       authState = connState.PENDING;
-      if ($rootScope.platformOS != 'desktop') {
-        mobileSocketConnected = false;
-      }
 
       if (!isTimerOn) {
         NVR.log("EventServer: Will try to reconnect in 10 sec..");
@@ -368,153 +301,42 @@ angular.module('zmApp.controllers')
       authState = connState.PENDING;
       isSocketReady = false;
 
-      if ($rootScope.platformOS == 'desktop') {
-        NVR.debug("EventServer: Using browser websockets...");
-        return setupDesktopSocket();
-      } else {
-        NVR.debug("EventServer: Using native websockets...");
-        return setupMobileSocket();
-      }
+      NVR.debug('EventServer: Using built-in WebSocket implementation');
+      return setupWebSocket();
     } // end function init()
-
-
-    function setupMobileSocket() {
-      if (!pushInited) {
-        NVR.debug("Calling pushInit()");
-        pushInit();
-      } else {
-        NVR.debug("pushInit() already done");
-      }
-
-      var loginData = NVR.getLogin();
-      var d = $q.defer();
-      var plugin = getCapacitorWebsocketPlugin();
-
-      if (!plugin || typeof plugin.build !== 'function') {
-        NVR.debug('EventServer: Capacitor Websocket plugin not available, falling back to browser websocket');
-        return setupDesktopSocket();
-      }
-
-      capacitorWebsocketPlugin = plugin;
-      clearMobileSocketListeners();
-      mobileSocketConnected = false;
-
-      if (typeof plugin.disconnect === 'function') {
-        plugin.disconnect({
-          name: mobileSocketName
-        }).catch(function () {
-          // ignore; connection might not exist yet
-        });
-      }
-
-      if (!loginData.enableStrictSSL) {
-        NVR.debug('EventServer: Strict SSL disabled; native websocket may reject self-signed certificates if the platform enforces them.');
-      }
-
-      var resolved = false;
-
-      var wsHeaders = {};
-      if (typeof window !== 'undefined' && window.navigator && window.navigator.userAgent) {
-        wsHeaders['User-Agent'] = window.navigator.userAgent;
-      }
-
-      plugin.build({
-        name: mobileSocketName,
-        url: loginData.eventServer,
-        headers: wsHeaders
-      }).then(function () {
-        return plugin.applyListeners({
-          name: mobileSocketName
-        });
-      }).then(function () {
-        addMobileListener(mobileSocketName + ':message', function (event) {
-          if (event && typeof event.data === 'string') {
-            handleMessage(event.data);
-          } else if (typeof event === 'string') {
-            handleMessage(event);
-          } else {
-            NVR.debug('EventServer: Received non-string websocket payload, ignoring');
-          }
-        });
-
-        addMobileListener(mobileSocketName + ':disconnected', function (event) {
-          handleClose(event || {});
-          if (!resolved) {
-            resolved = true;
-            d.resolve(false);
-          }
-        });
-
-        addMobileListener(mobileSocketName + ':error', function (event) {
-          handleError(event || {});
-          if (!resolved) {
-            resolved = true;
-            d.resolve(false);
-          }
-        });
-
-        addMobileListener(mobileSocketName + ':connecterror', function (event) {
-          handleError(event || {});
-          if (!resolved) {
-            resolved = true;
-            d.resolve(false);
-          }
-        });
-
-        addMobileListener(mobileSocketName + ':connected', function (event) {
-          handleOpen(event || {});
-          if (!resolved) {
-            resolved = true;
-            d.resolve(true);
-          }
-        });
-
-        return plugin.connect({
-          name: mobileSocketName
-        });
-      }).catch(function (err) {
-        NVR.debug('EventServer: Failed to initialize native websocket: ' + JSON.stringify(err));
-        clearMobileSocketListeners();
-        mobileSocketConnected = false;
-        if (!resolved) {
-          resolved = true;
-          setupDesktopSocket().then(function (fallback) {
-            d.resolve(fallback);
-          }).catch(function (fallbackErr) {
-            NVR.debug('EventServer: fallback websocket also failed: ' + JSON.stringify(fallbackErr));
-            d.resolve(false);
-          });
-        }
-      });
-
-      return d.promise;
-    }
     
-    function setupDesktopSocket() {
+    function setupWebSocket() {
       var loginData = NVR.getLogin();
       var d = $q.defer();
-      ws = new WebSocket(loginData.eventServer);
+      var socket;
+
+      try {
+        socket = new WebSocket(loginData.eventServer);
+      } catch (err) {
+        NVR.debug('EventServer: Failed to create websocket: ' + JSON.stringify(err));
+        d.reject(err);
+        return d.promise;
+      }
+
+      ws = socket;
 
       ws.onopen = function (event) {
-        handleOpen(event.data);
+        handleOpen(event);
         if (!pushInited) {
           NVR.debug("Initializing push notifications");
           pushInit();
         }
-        d.resolve("true");
-        return d.promise;
+        d.resolve(true);
       };
 
       ws.onclose = function (event) {
         handleClose(event);
         d.reject("error");
-        return d.promise;
       };
 
       ws.onerror = function (event) {
         handleError(event);
         d.reject("error");
-        return d.promise;
       };
 
       ws.onmessage = function (event) {
@@ -532,27 +354,19 @@ angular.module('zmApp.controllers')
 
       NVR.log("EventServer: Clearing error/close cbk, disconnecting and deleting Event Server socket...");
 
-      if ($rootScope.platformOS == 'desktop') {
-        if (typeof ws === 'undefined') {
-          NVR.log("EventServer: Event server socket is empty, nothing to disconnect");
-          return;
-        }
-
-        ws.onmessage = null;
-        iClosed = true;
-        ws.close();
-        ws = undefined;
-      } else {
-        if (capacitorWebsocketPlugin && typeof capacitorWebsocketPlugin.disconnect === 'function') {
-          iClosed = true;
-          capacitorWebsocketPlugin.disconnect({
-            name: mobileSocketName
-          }).catch(function (err) {
-            NVR.debug('EventServer: Error disconnecting native websocket: ' + JSON.stringify(err));
-          });
-        }
-        clearMobileSocketListeners();
+      if (typeof ws === 'undefined' || ws === null) {
+        NVR.log("EventServer: Event server socket is empty, nothing to disconnect");
+        return;
       }
+
+      ws.onmessage = null;
+      iClosed = true;
+      try {
+        ws.close();
+      } catch (err) {
+        NVR.debug('EventServer: Error closing websocket: ' + JSON.stringify(err));
+      }
+      ws = undefined;
     }
 
     function getState() {
@@ -586,16 +400,9 @@ angular.module('zmApp.controllers')
         return;
       }
 
-      if ($rootScope.platformOS == 'desktop') {
-        if (typeof ws === 'undefined') {
-          NVR.debug("EventServer: not initialized, not sending message");
-          return;
-        }
-      } else {
-        if (!capacitorWebsocketPlugin || !mobileSocketConnected) {
-          NVR.debug("EventServer: native websocket not initialized, not sending message");
-          return;
-        }
+      if (typeof ws === 'undefined' || ws === null) {
+        NVR.debug("EventServer: not initialized, not sending message");
+        return;
       }
 
       if (isSocketReady == false) {
@@ -624,24 +431,11 @@ angular.module('zmApp.controllers')
 
       NVR.debug("EventServer: ok to send message");
   
-      if ($rootScope.platformOS == 'desktop') {
-        try {
-          ws.send(jmsg);
-        }
-        catch (e)  {
-          NVR.debug ("EventServer: Exception sending ES message: "+JSON.stringify(e));
-        }
-      } else {
-        if (mobileSocketConnected && capacitorWebsocketPlugin && typeof capacitorWebsocketPlugin.send === 'function') {
-          capacitorWebsocketPlugin.send({
-            name: mobileSocketName,
-            data: jmsg
-          }).catch(function (err) {
-            NVR.debug('EventServer: Error sending native websocket message: ' + JSON.stringify(err));
-          });
-        } else {
-          NVR.debug("EventServer: Native websocket not initialized, can't send " + jmsg);
-        }
+      try {
+        ws.send(jmsg);
+      }
+      catch (e)  {
+        NVR.debug ("EventServer: Exception sending ES message: "+JSON.stringify(e));
       }
     } // end function sendMessage(type, obj, isForce)
 
